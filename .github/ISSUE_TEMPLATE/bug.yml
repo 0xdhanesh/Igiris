@@ -1,0 +1,56 @@
+name: Bug report
+description: Report a reproducible defect without including sensitive host evidence.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include credentials, private telemetry, exploit details, or sensitive host data. Use private vulnerability reporting for security issues.
+  - type: input
+    id: version
+    attributes:
+      label: Igiris version or commit
+      placeholder: v0.1.0 or commit identifier
+    validations:
+      required: true
+  - type: dropdown
+    id: collector
+    attributes:
+      label: Collector mode
+      options:
+        - proc polling
+        - BCC/eBPF
+        - disabled
+        - unknown
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Explain the observed behavior and expected result.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest safe reproduction possible.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: Linux distribution, kernel, Python version, browser
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety checks
+      options:
+        - label: I removed credentials, private telemetry, and identifying host data.
+          required: true
+        - label: This is not a vulnerability report requiring private disclosure.
+          required: true
