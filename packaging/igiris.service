@@ -1,0 +1,27 @@
+[Unit]
+Description=Igiris network process investigation daemon
+Documentation=https://localhost:8787
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+EnvironmentFile=-/etc/igiris/igiris.env
+ExecStart=/opt/igiris/.venv/bin/igirisd
+Restart=on-failure
+RestartSec=3
+StateDirectory=igiris
+StateDirectoryMode=0700
+UMask=0077
+WorkingDirectory=/var/lib/igiris
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=strict
+ReadWritePaths=/var/lib/igiris
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target
