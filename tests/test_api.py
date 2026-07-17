@@ -1,5 +1,7 @@
 import csv
 import io
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from igiris.models import Event, ProcessArtifact, ProcessNode
 from datetime import datetime, timezone
@@ -63,6 +65,44 @@ def test_csv_export_is_evidence_ready(client, store):
     assert rows[0]["raddr"] == "2001:db8::1"
 
 
+def test_csv_export_neutralizes_spreadsheet_formula_cells(client, store):
+    now = datetime.now(timezone.utc)
+    store.upsert_process(ProcessNode(pid=9, ppid=1, root_pid=9, name="formula-test", exe_path="=cmd|' /C calc'!A0", exe_hash=None, user="analyst", cmdline="formula-test", first_seen=now, last_seen=now))
+    store.add_event(Event(ts=now, type="connect", pid=9, root_pid=9, exe_path="=cmd|' /C calc'!A0", family="ipv4", protocol="tcp", raddr="+1+1", rport=443, domain="@SUM(1,1)", domain_source="observed_dns", raw_meta={}))
+
+    response = client.get("/api/export.csv?root_pid=9")
+    row = next(csv.DictReader(io.StringIO(response.text)))
+
+    assert row["exe_path"] == "'=cmd|' /C calc'!A0"
+    assert row["raddr"] == "'+1+1"
+    assert row["domain"] == "'@SUM(1,1)"
+
+
+def test_all_api_responses_are_not_cacheable(client, store):
+    seed(store)
+
+    for path in ("/api", "/api/health", "/api/events", "/api/export.json", "/api/export.csv", "/api/not-found"):
+        response = client.get(path)
+        assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_unhandled_api_errors_are_not_cacheable(store):
+    from fastapi.testclient import TestClient
+    from igiris.api import create_app
+    from igiris.config import Settings
+
+    app = create_app(Settings(database_path=str(store.path), static_dir="missing", collector_enabled=False, allowed_hosts="testserver"), store)
+
+    @app.get("/api/explode")
+    def explode():
+        raise RuntimeError("intentional test exception")
+
+    response = TestClient(app, raise_server_exceptions=False).get("/api/explode")
+
+    assert response.status_code == 500
+    assert response.headers["Cache-Control"] == "no-store"
+
+
 def test_export_honors_view_and_destination_filters(client, store):
     seed(store)
     response = client.get("/api/export.json?root_pid=7&mode=history&destination=example.test")
@@ -102,14 +142,119 @@ def test_api_rejects_untrusted_host(store):
     assert TestClient(app, base_url="http://attacker.test").get("/api/health").status_code == 400
 
 
-def test_api_token_and_origin_protect_evidence(store):
+def test_password_login_session_logout_and_origin_protect_evidence(store):
+    from fastapi.testclient import TestClient
+    from igiris.api import create_app
+    from igiris.auth import hash_password
+    from igiris.config import Settings
+
+    app = create_app(
+        Settings(
+            database_path=str(store.path),
+            static_dir="missing",
+            collector_enabled=False,
+            allowed_hosts="testserver",
+            password_verifier=hash_password("test password"),
+            session_ttl_seconds=300,
+        ),
+        store,
+    )
+    secured = TestClient(app)
+
+    unauthorized = secured.get("/api/health")
+    assert unauthorized.status_code == 401
+    assert unauthorized.headers["Cache-Control"] == "no-store"
+    assert secured.delete("/api/evidence").status_code == 401
+    assert secured.post("/api/auth/login", json={"password": "wrong"}).status_code == 401
+    assert secured.post(
+        "/api/auth/login",
+        json={"password": "test password"},
+        headers={"Origin": "http://evil.test"},
+    ).status_code == 403
+
+    login = secured.post("/api/auth/login", json={"password": "test password"})
+    assert login.status_code == 200
+    assert login.json()["expires_in"] == 300
+    token = login.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    assert secured.get("/api/health", headers=headers).status_code == 200
+
+    assert secured.post("/api/auth/logout", headers=headers).status_code == 204
+    assert secured.get("/api/health", headers=headers).status_code == 401
+
+
+def test_non_ascii_bearer_credential_is_rejected_as_unauthorized(store):
+    from fastapi.testclient import TestClient
+    from igiris.api import create_app
+    from igiris.auth import hash_password
+    from igiris.config import Settings
+
+    app = create_app(Settings(database_path=str(store.path), static_dir="missing",
+        collector_enabled=False, allowed_hosts="testserver",
+        password_verifier=hash_password("test password")), store)
+
+    response = TestClient(app).get("/api/health", headers={b"Authorization": b"Bearer caf\xe9"})
+
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+def test_password_login_throttles_repeated_failures(store):
+    from fastapi.testclient import TestClient
+    from igiris.api import create_app
+    from igiris.auth import hash_password
+    from igiris.config import Settings
+
+    app = create_app(
+        Settings(
+            database_path=str(store.path),
+            static_dir="missing",
+            collector_enabled=False,
+            allowed_hosts="testserver",
+            password_verifier=hash_password("test password"),
+            login_max_failures=2,
+            login_failure_window_seconds=60,
+        ),
+        store,
+    )
+    secured = TestClient(app)
+
+    assert secured.post("/api/auth/login", json={"password": "wrong"}).status_code == 401
+    assert secured.post("/api/auth/login", json={"password": "wrong again"}).status_code == 401
+    blocked = secured.post("/api/auth/login", json={"password": "test password"})
+    assert blocked.status_code == 429
+    assert blocked.headers["Retry-After"] == "60"
+
+
+def test_parallel_logins_bound_expensive_password_checks(store, monkeypatch):
     from fastapi.testclient import TestClient
     from igiris.api import create_app
     from igiris.config import Settings
-    app = create_app(Settings(database_path=str(store.path), static_dir="missing", collector_enabled=False, allowed_hosts="testserver", api_token="test-secret"), store)
-    secured = TestClient(app)
-    assert secured.get("/api/health").status_code == 401
-    assert secured.delete("/api/evidence").status_code == 401
-    headers = {"Authorization": "Bearer test-secret"}
-    assert secured.get("/api/health", headers=headers).status_code == 200
-    assert secured.get("/api/health", headers={**headers, "Origin": "http://evil.test"}).status_code == 403
+
+    entered = 0
+    entered_lock = threading.Lock()
+    release = threading.Event()
+
+    def slow_verify(_password, _verifier):
+        nonlocal entered
+        with entered_lock:
+            entered += 1
+        release.wait(timeout=2)
+        return False
+
+    monkeypatch.setattr("igiris.api.verify_password", slow_verify)
+    app = create_app(Settings(database_path=str(store.path), static_dir="missing",
+        collector_enabled=False, allowed_hosts="testserver", password_verifier="configured",
+        login_max_failures=10, login_failure_window_seconds=60, login_max_parallel_checks=2), store)
+
+    def login():
+        return TestClient(app).post("/api/auth/login", json={"password": "wrong"})
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        futures = [pool.submit(login) for _ in range(6)]
+        assert threading.Event().wait(0.1) is False
+        release.set()
+        responses = [future.result() for future in futures]
+
+    assert entered == 2
+    assert sorted(response.status_code for response in responses) == [401, 401, 429, 429, 429, 429]

@@ -1,38 +1,82 @@
 from __future__ import annotations
-import csv, hmac, io, json, os
+import csv, io, json, os, threading
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
+from .auth import LoginLimiter, SessionManager, verify_password
 from .config import Settings
 from .store import Store
 
 EXPORT_FIELDS=["ts","type","pid","root_pid","exe_path","exe_hash","family","protocol","raddr","rport","domain","domain_source","success","raw_meta"]
+CSV_FORMULA_PREFIXES=("=","+","-","@")
+
+def _safe_csv_cell(value):
+    if not isinstance(value,str): return value
+    stripped=value.lstrip()
+    if value.startswith(("\t","\r","\n")) or (stripped and stripped.startswith(CSV_FORMULA_PREFIXES)):
+        return "'"+value
+    return value
+
+class LoginRequest(BaseModel):
+    password: str = Field(min_length=1,max_length=1024)
 
 def create_app(settings:Settings|None=None, store:Store|None=None)->FastAPI:
     settings=settings or Settings(); db=store or Store(settings.database_path); db.initialize()
     app=FastAPI(title="Igiris",version="0.1.0")
-    token=settings.resolve_api_token(); allowed_hosts=settings.allowed_host_list; allowed_origin_hosts={host.strip("[]") for host in allowed_hosts}
+    verifier=settings.resolve_password_verifier(); sessions=SessionManager(settings.session_ttl_seconds); login_limiter=LoginLimiter(settings.login_max_failures,settings.login_failure_window_seconds); password_check_slots=threading.BoundedSemaphore(settings.login_max_parallel_checks); allowed_hosts=settings.allowed_host_list; allowed_origin_hosts={host.strip("[]") for host in allowed_hosts}
+    def is_api_path(path:str)->bool: return path=="/api" or path.startswith("/api/")
+    @app.exception_handler(Exception)
+    async def unhandled_error(request:Request,_error:Exception):
+        headers={"Cache-Control":"no-store"} if is_api_path(request.url.path) else None
+        return JSONResponse({"detail":"Internal server error"},status_code=500,headers=headers)
     app.add_middleware(TrustedHostMiddleware,allowed_hosts=allowed_hosts)
     @app.middleware("http")
     async def protect_local_api(request:Request,call_next):
-        if request.url.path.startswith("/api/"):
+        is_api=is_api_path(request.url.path)
+        response=None
+        if is_api:
             origin=request.headers.get("origin")
             if origin:
                 try: origin_host=urlparse(origin).hostname
                 except ValueError: origin_host=None
                 if origin_host not in allowed_origin_hosts:
-                    return JSONResponse({"detail":"Origin not allowed"},status_code=403)
-            if token:
+                    response=JSONResponse({"detail":"Origin not allowed"},status_code=403)
+            if response is None and verifier and request.url.path != "/api/auth/login":
                 supplied=request.headers.get("authorization","")
-                expected=f"Bearer {token}"
-                if not hmac.compare_digest(supplied,expected):
-                    return JSONResponse({"detail":"API token required"},status_code=401,headers={"WWW-Authenticate":"Bearer"})
-        return await call_next(request)
-    app.state.settings=settings; app.state.store=db; app.state.collector_status={"mode":"disabled" if not settings.collector_enabled else "initializing","visibility":"limited","privileged":os.geteuid()==0,"ebpf_available":False,"messages":[]}
+                scheme,separator,credential=supplied.partition(" ")
+                if not separator or scheme != "Bearer" or not sessions.authenticate(credential):
+                    response=JSONResponse({"detail":"Password session required"},status_code=401,headers={"WWW-Authenticate":"Bearer"})
+        if response is None:
+            response=await call_next(request)
+        if is_api:
+            response.headers["Cache-Control"]="no-store"
+        return response
+    app.state.settings=settings; app.state.store=db; app.state.sessions=sessions; app.state.collector_status={"mode":"disabled" if not settings.collector_enabled else "initializing","visibility":"limited","privileged":os.geteuid()==0,"ebpf_available":False,"messages":[]}
+    @app.post("/api/auth/login")
+    def login(payload:LoginRequest,request:Request):
+        if not verifier: raise HTTPException(503,"Password authentication is not configured")
+        client=request.client.host if request.client else "unknown"
+        if not password_check_slots.acquire(blocking=False):
+            raise HTTPException(429,"Password verification is busy",headers={"Retry-After":"1"})
+        try:
+            retry_after=login_limiter.reserve(client)
+            if retry_after is not None:
+                raise HTTPException(429,"Too many failed login attempts",headers={"Retry-After":str(retry_after)})
+            if not verify_password(payload.password,verifier):
+                raise HTTPException(401,"Invalid password")
+            login_limiter.clear(client)
+            return JSONResponse({"token":sessions.issue(),"expires_in":settings.session_ttl_seconds},headers={"Cache-Control":"no-store"})
+        finally:
+            password_check_slots.release()
+    @app.post("/api/auth/logout",status_code=204)
+    def logout(request:Request):
+        sessions.revoke(request.headers.get("authorization","").removeprefix("Bearer "))
+        return Response(status_code=204)
     @app.get("/api/health")
     def health(): return {"status":"ok",**app.state.collector_status,"retention_hours":settings.retention_hours,"baseline_ts":db.get_baseline()}
     @app.get("/api/revision")
@@ -86,7 +130,7 @@ def create_app(settings:Settings|None=None, store:Store|None=None)->FastAPI:
     def export_csv(root_pid:int|None=None,search:str|None=None,baseline_only:bool=False,mode:str=Query("combined",pattern="^(live|history|combined)$"),destination:str|None=None):
         out=io.StringIO(); writer=csv.DictWriter(out,fieldnames=EXPORT_FIELDS); writer.writeheader()
         for e in selected(root_pid,search,baseline_only,mode,destination):
-            row=e.model_dump(mode="json",exclude={"id"}); row["raw_meta"]=json.dumps(row["raw_meta"],separators=(",",":")); writer.writerow(row)
+            row=e.model_dump(mode="json",exclude={"id"}); row["raw_meta"]=json.dumps(row["raw_meta"],separators=(",",":")); writer.writerow({key:_safe_csv_cell(value) for key,value in row.items()})
         return StreamingResponse(io.BytesIO(out.getvalue().encode()),media_type="text/csv",headers={"Content-Disposition":"attachment; filename=igiris-evidence.csv"})
     static=Path(settings.static_dir)
     if static.exists():

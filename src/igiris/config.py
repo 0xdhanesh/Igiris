@@ -7,8 +7,12 @@ class Settings(BaseSettings):
     bind_host: str = "127.0.0.1"
     bind_port: int = Field(default=8787,gt=0,le=65535)
     allowed_hosts: str = "127.0.0.1,localhost,[::1]"
-    api_token: str | None = None
-    api_token_file: str | None = None
+    password_verifier: str | None = None
+    password_verifier_file: str | None = None
+    session_ttl_seconds: int = Field(default=8 * 60 * 60, gt=0)
+    login_max_failures: int = Field(default=5, gt=0)
+    login_failure_window_seconds: int = Field(default=60, gt=0)
+    login_max_parallel_checks: int = Field(default=2, gt=0, le=8)
     database_path: str = str(Path.home() / ".local" / "share" / "igiris" / "igiris.db")
     retention_hours: int = Field(default=24,gt=0)
     soft_disk_cap_mb: int = Field(default=512,gt=0)
@@ -27,9 +31,8 @@ class Settings(BaseSettings):
     def allowed_host_list(self)->list[str]:
         return [part.strip() for part in self.allowed_hosts.split(",") if part.strip()]
 
-    def resolve_api_token(self)->str|None:
-        if self.api_token: return self.api_token
-        if not self.api_token_file: return None
-        token=Path(self.api_token_file).read_text().strip()
-        if not token: raise ValueError("Configured API token file is empty")
-        return token
+    def resolve_password_verifier(self)->str|None:
+        if self.password_verifier: return self.password_verifier
+        if not self.password_verifier_file: return None
+        from .auth import read_password_verifier
+        return read_password_verifier(self.password_verifier_file)
