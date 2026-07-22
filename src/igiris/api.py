@@ -111,7 +111,8 @@ def create_app(settings:Settings|None=None, store:Store|None=None)->FastAPI:
         artifacts=db.list_artifacts(root_pid,pid)
         status=app.state.collector_status
         return {"process":process,"commands":db.list_process_subtree(root_pid,pid),
-            "libraries":[item for item in artifacts if item.kind=="library"],
+            "libraries":[{**item.model_dump(mode="json"),"network_related":item.source.startswith("ebpf_open")}
+                for item in artifacts if item.kind=="library"],
             "files":[item for item in artifacts if item.kind=="file"],
             "network":db.list_events(root_pid=root_pid,limit=2000,mode="combined",process_pid=pid),
             "collector":{"mode":status.get("mode"),"visibility":status.get("visibility"),"ebpf_available":status.get("ebpf_available",False)},

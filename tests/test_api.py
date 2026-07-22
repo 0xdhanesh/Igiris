@@ -52,6 +52,7 @@ def test_advanced_process_evidence_combines_ioc_commands_artifacts_and_domain_ip
     assert body["process"]["exe_hash"] == "python-hash"
     assert body["commands"][0]["cmdline"] == "python3 implant.py"
     assert body["libraries"][0]["path"] == "/usr/lib/libssl.so.3"
+    assert body["libraries"][0]["network_related"] is False
     assert body["files"][0]["path"] == "/etc/resolv.conf"
     assert (body["network"][0]["domain"], body["network"][0]["raddr"]) == ("google.com", "142.250.70.14")
     assert body["evidence_semantics"]["file_visibility"] == "observed_snapshot"
@@ -65,6 +66,14 @@ def test_advanced_evidence_reports_kernel_stream_when_ebpf_is_active(client, sto
     body=client.get("/api/parents/7/processes/7/advanced").json()
     assert body["evidence_semantics"]["file_visibility"] == "kernel_events"
     assert "short-lived activity can be missed" not in body["evidence_semantics"]["warning"]
+
+
+def test_advanced_library_payload_exposes_network_related_marker(client, store):
+    seed(store)
+    now = datetime.now(timezone.utc)
+    store.upsert_artifacts([ProcessArtifact(pid=7, root_pid=7, kind="library", path="/usr/lib/libcurl.so.4", source="ebpf_open_before_connect", first_seen=now, last_seen=now)])
+    body=client.get("/api/parents/7/processes/7/advanced").json()
+    assert body["libraries"][0]["network_related"] is True
 
 
 def test_csv_export_is_evidence_ready(client, store):
