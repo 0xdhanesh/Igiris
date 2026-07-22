@@ -2,6 +2,16 @@
 set -euo pipefail
 if [[ ${EUID} -ne 0 ]]; then echo "Run as root: sudo packaging/install.sh" >&2; exit 1; fi
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if ! command -v npm >/dev/null 2>&1; then
+  printf 'Error: npm is required to compile the frontend. Install Node.js/npm, then rerun this installer.\n' >&2
+  exit 1
+fi
+printf 'Compiling the latest frontend bundle...\n'
+npm --prefix "$ROOT/frontend" ci
+npm --prefix "$ROOT/frontend" run build
+rm -rf "$ROOT/src/igiris/static"
+install -d -m 0755 "$ROOT/src/igiris/static"
+cp -a "$ROOT/frontend/dist/." "$ROOT/src/igiris/static/"
 KERNEL_RELEASE="$(uname -r)"
 if [[ ! -e "/lib/modules/${KERNEL_RELEASE}/build" && ! -e /sys/kernel/kheaders.tar.xz ]]; then
   printf 'Warning: matching headers for running kernel %s are unavailable.\n' "$KERNEL_RELEASE" >&2
