@@ -105,9 +105,12 @@ def create_app(settings:Settings|None=None, store:Store|None=None)->FastAPI:
             "files":[item for item in artifacts if item.kind=="file"],
             "network":db.list_events(root_pid=root_pid,limit=2000,mode="combined",process_pid=pid),
             "collector":{"mode":status.get("mode"),"visibility":status.get("visibility"),"ebpf_available":status.get("ebpf_available",False)},
-            "evidence_semantics":{"library_visibility":"observed_snapshot","file_visibility":"observed_snapshot",
+            "evidence_semantics":{"library_visibility":"kernel_events" if status.get("ebpf_available") else "observed_snapshot",
+                "file_visibility":"kernel_events" if status.get("ebpf_available") else "observed_snapshot",
                 "network_visibility":"kernel_assisted" if status.get("ebpf_available") else "observed_snapshot",
-                "warning":"Library and file paths are observed from /proc snapshots for network-active processes; short-lived activity can be missed."}}
+                "warning":("File and library paths are captured from eBPF open events, with /proc snapshots used only for enrichment."
+                    if status.get("ebpf_available") else
+                    "Library and file paths are observed from /proc snapshots for network-active processes; short-lived activity can be missed.")}}
     @app.post("/api/baseline")
     def set_baseline(payload:dict|None=None):
         raw=(payload or {}).get("baseline_ts"); ts=datetime.fromisoformat(raw.replace("Z","+00:00")) if raw else datetime.now(timezone.utc); db.set_baseline(ts); return {"baseline_ts":ts}

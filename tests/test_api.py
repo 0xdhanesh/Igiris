@@ -56,6 +56,14 @@ def test_advanced_process_evidence_combines_ioc_commands_artifacts_and_domain_ip
     assert client.get("/api/parents/99/processes/8/advanced").status_code == 404
 
 
+def test_advanced_evidence_reports_kernel_stream_when_ebpf_is_active(client, store):
+    seed(store)
+    client.app.state.collector_status.update({"mode":"ebpf+bcc","visibility":"full","ebpf_available":True})
+    body=client.get("/api/parents/7/processes/7/advanced").json()
+    assert body["evidence_semantics"]["file_visibility"] == "kernel_events"
+    assert "short-lived activity can be missed" not in body["evidence_semantics"]["warning"]
+
+
 def test_csv_export_is_evidence_ready(client, store):
     seed(store)
     response = client.get("/api/export.csv?root_pid=7")
