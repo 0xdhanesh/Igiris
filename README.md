@@ -1,7 +1,7 @@
 # Igiris - Blood-Red Commander
 
 <p align="center">
-  <img src="./assets/Igiris_shadow_army.png" alt="Shadow-Army-Igiris" width="75%">
+  <img src="./assets/igiris_0xdhanesh.png" alt="Shadow-Army-Igiris" width="75%">
 </p>
 
 **Local-first Linux process and network evidence for defenders, incident responders, and authorized security testers.**
