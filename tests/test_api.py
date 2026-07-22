@@ -15,12 +15,15 @@ def seed(store):
 
 def test_parent_detail_contains_tree_and_events(client, store):
     seed(store)
+    now = datetime.now(timezone.utc)
+    store.upsert_process(ProcessNode(pid=99, ppid=7, root_pid=7, name="unrelated", exe_path="/usr/bin/unrelated", exe_hash=None, user="analyst", cmdline="unrelated", first_seen=now, last_seen=now))
     response = client.get("/api/parents/7")
     assert response.status_code == 200
     body = response.json()
     assert body["parent"]["name"] == "wget"
     assert body["events"][0]["family"] == "ipv6"
     assert body["processes"][0]["exe_hash"] is None
+    assert [process["pid"] for process in body["processes"]] == [7]
 
 
 def test_events_can_be_filtered_to_a_selected_process(client, store):

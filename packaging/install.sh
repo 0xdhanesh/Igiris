@@ -21,6 +21,7 @@ if ! python3 -c 'import bcc' >/dev/null 2>&1; then
   printf 'Warning: BCC Python bindings are unavailable. Install python3-bpfcc for kernel-assisted collection.\n' >&2
 fi
 install -d -m 0755 /opt/igiris /etc/igiris
+install -m 0644 "$ROOT/version.txt" /opt/igiris/version.txt
 if systemctl is-active --quiet igiris; then
   printf 'Stopping running Igiris service before updating /opt/igiris.\n'
   systemctl stop igiris
@@ -39,5 +40,5 @@ install -m 0644 "$ROOT/packaging/igiris.env" /etc/igiris/igiris.env
 install -m 0644 "$ROOT/packaging/igiris.service" /etc/systemd/system/igiris.service
 systemctl daemon-reload
 systemctl enable igiris
-systemctl start igiris
+systemctl restart igiris
 printf 'Igiris installed. Open http://127.0.0.1:8787 and enter your password.\n'
