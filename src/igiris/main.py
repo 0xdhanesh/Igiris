@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from .api import create_app
 from .collectors import PollingCollector
-from .ebpf import BccCollector, bcc_available
+from .ebpf import BccCollector, bcc_readiness
 from .config import Settings
 from .store import Store
 
@@ -12,7 +12,10 @@ def build_app(settings:Settings|None=None):
     settings=settings or Settings(); store=Store(settings.database_path); store.initialize(); collector=None; task=None
     async def _run_collector(app):
         nonlocal collector
-        collector=(BccCollector if bcc_available() else PollingCollector)(store,settings,app.state.collector_status)
+        ready,diagnostics=bcc_readiness()
+        if diagnostics:
+            app.state.collector_status["messages"]=diagnostics
+        collector=(BccCollector if ready else PollingCollector)(store,settings,app.state.collector_status)
         try:
             await collector.run()
         except Exception as exc:

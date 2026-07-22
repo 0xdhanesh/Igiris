@@ -1,5 +1,6 @@
 from __future__ import annotations
-import asyncio, importlib.util, os, socket
+import asyncio, importlib.util, os, platform, socket
+from pathlib import Path
 from datetime import datetime, timezone
 from .collectors import PollingCollector, dns_query_from_tool, persist_advanced_artifacts, persist_lineage
 from .models import Event
@@ -54,13 +55,30 @@ TRACEPOINT_PROBE(sched, sched_process_exec) {
 }
 """
 
+def bcc_readiness()->tuple[bool,list[str]]:
+    """Check the prerequisites BCC needs before attempting runtime compilation."""
+    messages=[]
+    if os.geteuid()!=0:
+        messages.append("Igiris is not running as root; BCC cannot load eBPF programs.")
+    if importlib.util.find_spec("bcc") is None:
+        messages.append("BCC Python bindings are missing (install python3-bpfcc on Kali/Debian).")
+    release=platform.uname().release
+    build=Path("/lib/modules")/release/"build"
+    kheaders=Path("/sys/kernel/kheaders.tar.xz")
+    if not build.exists() and not kheaders.exists():
+        messages.append(
+            f"Matching kernel headers are unavailable: {build} does not exist and the kheaders interface is not active. "
+            "Install the headers matching the running kernel, then reboot into that kernel if needed."
+        )
+    return not messages,messages
+
 def bcc_available()->bool:
-    return os.geteuid()==0 and importlib.util.find_spec("bcc") is not None
+    return bcc_readiness()[0]
 
 def capability_report()->dict:
-    available=bcc_available()
+    available,messages=bcc_readiness()
     return {"ebpf_available":available,"privileged":os.geteuid()==0,
-        "messages":[] if available else ["Install BCC Python bindings and run with root/CAP_BPF privileges for kernel-assisted connect and exec telemetry."]}
+        "messages":messages}
 
 class BccCollector(PollingCollector):
     """Kernel-assisted connect/exec history plus /proc live-socket snapshots."""
