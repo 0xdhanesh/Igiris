@@ -142,8 +142,9 @@ class PollingCollector:
         self.store.prune(self.settings.retention_hours)
         self.store.prune_to_cap(self.settings.soft_disk_cap_mb*1024*1024)
     async def run(self):
+        diagnostics=list(self.status.get("messages",[]))
         self.status.update({"mode":"proc-polling","visibility":"limited","privileged":os.geteuid()==0,"ebpf_available":False,
-            "messages":["eBPF unavailable; using /proc socket and process polling.","Short-lived connections, DNS names, and ICMP attribution may be incomplete."]})
+            "messages":diagnostics+["eBPF unavailable; using /proc socket and process polling.","Short-lived connections, DNS names, and ICMP attribution may be incomplete."]})
         while not self.stop_event.is_set():
             await asyncio.to_thread(self.collect_once); await asyncio.sleep(self.settings.poll_interval)
     def reset_tracking(self):
