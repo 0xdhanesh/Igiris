@@ -15,6 +15,14 @@ from .store import Store
 EXPORT_FIELDS=["ts","type","pid","root_pid","exe_path","exe_hash","family","protocol","raddr","rport","domain","domain_source","success","raw_meta"]
 CSV_FORMULA_PREFIXES=("=","+","-","@")
 
+def _application_version()->str:
+    for path in (Path("/opt/igiris/version.txt"),Path(__file__).resolve().parents[2]/"version.txt"):
+        try:
+            value=path.read_text(encoding="utf-8").strip()
+            if value: return value.removeprefix("v")
+        except OSError: pass
+    return "unknown"
+
 def _safe_csv_cell(value):
     if not isinstance(value,str): return value
     stripped=value.lstrip()
@@ -27,7 +35,7 @@ class LoginRequest(BaseModel):
 
 def create_app(settings:Settings|None=None, store:Store|None=None)->FastAPI:
     settings=settings or Settings(); db=store or Store(settings.database_path); db.initialize()
-    app=FastAPI(title="Igiris",version="0.1.0")
+    app_version=_application_version(); app=FastAPI(title="Igiris",version=app_version)
     verifier=settings.resolve_password_verifier(); sessions=SessionManager(settings.session_ttl_seconds); login_limiter=LoginLimiter(settings.login_max_failures,settings.login_failure_window_seconds); password_check_slots=threading.BoundedSemaphore(settings.login_max_parallel_checks); allowed_hosts=settings.allowed_host_list; allowed_origin_hosts={host.strip("[]") for host in allowed_hosts}
     def is_api_path(path:str)->bool: return path=="/api" or path.startswith("/api/")
     @app.exception_handler(Exception)
@@ -78,7 +86,7 @@ def create_app(settings:Settings|None=None, store:Store|None=None)->FastAPI:
         sessions.revoke(request.headers.get("authorization","").removeprefix("Bearer "))
         return Response(status_code=204)
     @app.get("/api/health")
-    def health(): return {"status":"ok",**app.state.collector_status,"retention_hours":settings.retention_hours,"baseline_ts":db.get_baseline()}
+    def health(): return {"status":"ok","version":app_version,**app.state.collector_status,"retention_hours":settings.retention_hours,"baseline_ts":db.get_baseline()}
     @app.get("/api/revision")
     def revision(): return {"revision":db.data_revision()}
     @app.get("/api/parents")
@@ -89,7 +97,9 @@ def create_app(settings:Settings|None=None, store:Store|None=None)->FastAPI:
         if not summaries: raise HTTPException(404,"Parent not found")
         events=db.list_events(root_pid=root_pid,baseline_only=baseline_only,mode=mode)
         if destination: events=[e for e in events if e.domain==destination or e.raddr==destination]
-        return {"parent":summaries[0],"processes":db.list_processes(root_pid),"events":events,"baseline_ts":db.get_baseline()}
+        network_pids={event.pid for event in events}
+        processes=[process for process in db.list_processes(root_pid) if process.pid in network_pids]
+        return {"parent":summaries[0],"processes":processes,"events":events,"baseline_ts":db.get_baseline()}
     @app.get("/api/events")
     def events(search:str|None=None,root_pid:int|None=None,pid:int|None=None,baseline_only:bool=False,mode:str=Query("combined",pattern="^(live|history|combined)$"),destination:str|None=None,limit:int=Query(500,ge=1,le=2000)):
         evidence=db.list_events(root_pid,search,baseline_only,limit=limit,mode=mode,process_pid=pid)
@@ -105,9 +115,12 @@ def create_app(settings:Settings|None=None, store:Store|None=None)->FastAPI:
             "files":[item for item in artifacts if item.kind=="file"],
             "network":db.list_events(root_pid=root_pid,limit=2000,mode="combined",process_pid=pid),
             "collector":{"mode":status.get("mode"),"visibility":status.get("visibility"),"ebpf_available":status.get("ebpf_available",False)},
-            "evidence_semantics":{"library_visibility":"observed_snapshot","file_visibility":"observed_snapshot",
+            "evidence_semantics":{"library_visibility":"kernel_events" if status.get("ebpf_available") else "observed_snapshot",
+                "file_visibility":"kernel_events" if status.get("ebpf_available") else "observed_snapshot",
                 "network_visibility":"kernel_assisted" if status.get("ebpf_available") else "observed_snapshot",
-                "warning":"Library and file paths are observed from /proc snapshots for network-active processes; short-lived activity can be missed."}}
+                "warning":("File and library paths are captured from eBPF open events, with /proc snapshots used only for enrichment."
+                    if status.get("ebpf_available") else
+                    "Library and file paths are observed from /proc snapshots for network-active processes; short-lived activity can be missed.")}}
     @app.post("/api/baseline")
     def set_baseline(payload:dict|None=None):
         raw=(payload or {}).get("baseline_ts"); ts=datetime.fromisoformat(raw.replace("Z","+00:00")) if raw else datetime.now(timezone.utc); db.set_baseline(ts); return {"baseline_ts":ts}

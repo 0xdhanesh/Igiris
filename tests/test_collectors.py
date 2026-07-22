@@ -111,6 +111,13 @@ def test_bpf_connect_uses_syscall_entry_and_exit_sockaddr_capture():
     assert "tcp_v4_connect" not in BPF_PROGRAM
 
 
+def test_bpf_captures_file_paths_at_open_time():
+    assert "TRACEPOINT_PROBE(syscalls, sys_enter_openat)" in BPF_PROGRAM
+    assert "TRACEPOINT_PROBE(syscalls, sys_enter_openat2)" in BPF_PROGRAM
+    assert "BPF_PERF_OUTPUT(file_events)" in BPF_PROGRAM
+    assert "bpf_probe_read_user_str(&e.path" in BPF_PROGRAM
+
+
 def test_persist_lineage_keeps_meaningful_root_identity(tmp_path):
     store = Store(tmp_path / "lineage.db")
     store.initialize()

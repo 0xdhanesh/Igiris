@@ -3,7 +3,7 @@ import asyncio, importlib.util, os, platform, socket
 from pathlib import Path
 from datetime import datetime, timezone
 from .collectors import PollingCollector, dns_query_from_tool, persist_advanced_artifacts, persist_lineage
-from .models import Event
+from .models import Event, ProcessArtifact
 from .processes import ProcessSnapshot, resolve_root, snapshot_processes, to_node
 
 # BCC program for connect/exec telemetry. DNS and ICMP enrichers remain best-effort and
@@ -14,8 +14,10 @@ BPF_PROGRAM = r"""
 #include <uapi/linux/in6.h>
 #include <linux/sched.h>
 struct evt_t { u32 pid; u32 ppid; u32 kind; s32 retval; u16 family; u16 dport; unsigned char addr[16]; char comm[16]; };
+struct file_evt_t { u32 pid; u32 ppid; char path[256]; };
 struct pending_t { struct evt_t event; };
 BPF_PERF_OUTPUT(events);
+BPF_PERF_OUTPUT(file_events);
 BPF_HASH(connecting, u64, struct pending_t);
 static void identity(struct evt_t *e) {
   e->pid=bpf_get_current_pid_tgid()>>32;
@@ -53,6 +55,16 @@ TRACEPOINT_PROBE(sched, sched_process_exec) {
   struct evt_t e = {}; identity(&e); e.kind=2;
   events.perf_submit(args,&e,sizeof(e)); return 0;
 }
+TRACEPOINT_PROBE(syscalls, sys_enter_openat) {
+  struct file_evt_t e = {}; e.pid=bpf_get_current_pid_tgid()>>32;
+  bpf_probe_read_user_str(&e.path,sizeof(e.path),(void *)args->filename);
+  file_events.perf_submit(args,&e,sizeof(e)); return 0;
+}
+TRACEPOINT_PROBE(syscalls, sys_enter_openat2) {
+  struct file_evt_t e = {}; e.pid=bpf_get_current_pid_tgid()>>32;
+  bpf_probe_read_user_str(&e.path,sizeof(e.path),(void *)args->filename);
+  file_events.perf_submit(args,&e,sizeof(e)); return 0;
+}
 """
 
 def bcc_readiness()->tuple[bool,list[str]]:
@@ -81,14 +93,41 @@ def capability_report()->dict:
         "messages":messages}
 
 class BccCollector(PollingCollector):
-    """Kernel-assisted connect/exec history plus /proc live-socket snapshots."""
+    """Kernel connect, exec, and file-open history plus live /proc enrichment."""
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self._pending_paths:dict[int,set[str]]={}
+        self._network_roots:dict[int,int]={}
+    @staticmethod
+    def _artifact_kind(path:str)->str:
+        name=Path(path).name
+        return "library" if ".so" in name and (name.endswith(".so") or ".so." in name) else "file"
+    def _persist_kernel_paths(self,pid:int,root:int,paths:set[str]):
+        if not paths: return
+        now=datetime.now(timezone.utc)
+        self.store.upsert_artifacts([ProcessArtifact(pid=pid,root_pid=root,kind=self._artifact_kind(path),path=path,
+            source="ebpf_open",first_seen=now,last_seen=now) for path in paths])
+    def _consume_file(self,cpu,data,size):
+        raw=self._bpf["file_events"].event(data); pid=int(raw.pid)
+        path=bytes(raw.path).split(b"\0",1)[0].decode(errors="replace")
+        if not path: return
+        root=self._network_roots.get(pid)
+        if root is not None:
+            self._persist_kernel_paths(pid,root,{path}); return
+        paths=self._pending_paths.setdefault(pid,set())
+        if len(paths)<256: paths.add(path)
+        if len(self._pending_paths)>4096: self._pending_paths.pop(next(iter(self._pending_paths)))
     def _consume(self,cpu,data,size):
         raw=self._bpf["events"].event(data); pid=int(raw.pid); ppid=int(raw.ppid); kind=int(raw.kind)
         comm=bytes(raw.comm).split(b"\0",1)[0].decode(errors="replace") or f"pid-{pid}"
         table=snapshot_processes(); snap=table.get(pid) or ProcessSnapshot(pid,ppid,comm,None,comm,None); table.setdefault(pid,snap)
         root=resolve_root(pid,table); node=to_node(snap,root); persist_lineage(self.store,pid,table,root); persist_advanced_artifacts(self.store,pid,root)
         if kind==2:
+            # A PID may have been reused. Opens following this exec belong to the new image.
+            self._network_roots.pop(pid,None); self._pending_paths.pop(pid,None)
             if comm not in self.settings.network_tool_set: return
+            self._network_roots[pid]=root
+            self._persist_kernel_paths(pid,root,self._pending_paths.pop(pid,set()))
             self.store.add_event(Event(ts=datetime.now(timezone.utc),type="exec_network_tool",pid=pid,root_pid=root,exe_path=node.exe_path,exe_hash=node.exe_hash,
                 family="ipv6" if comm=="ping6" else "unknown",domain_source="none",raw_meta={"tool":comm,"source":"ebpf_sched_exec"}))
             query=dns_query_from_tool(snap)
@@ -96,6 +135,8 @@ class BccCollector(PollingCollector):
                 self.store.add_event(Event(ts=datetime.now(timezone.utc),type="dns",pid=pid,root_pid=root,exe_path=node.exe_path,exe_hash=node.exe_hash,
                     family="unknown",protocol="dns",domain=query,domain_source="observed_dns",raw_meta={"tool":comm,"source":"ebpf_sched_exec"}))
             return
+        self._network_roots[pid]=root
+        self._persist_kernel_paths(pid,root,self._pending_paths.pop(pid,set()))
         family="ipv6" if int(raw.family)==socket.AF_INET6 else "ipv4"
         packed=bytes(raw.addr)[:16 if family=="ipv6" else 4]
         try: address=socket.inet_ntop(socket.AF_INET6 if family=="ipv6" else socket.AF_INET,packed)
@@ -112,9 +153,11 @@ class BccCollector(PollingCollector):
         from bcc import BPF
         self._bpf=BPF(text=BPF_PROGRAM)
         self._bpf["events"].open_perf_buffer(self._consume,page_cnt=64)
+        # Keep file-open traffic isolated so it cannot crowd connect/exec events out.
+        self._bpf["file_events"].open_perf_buffer(self._consume_file,page_cnt=256)
         self._seen=set(snapshot_processes())
         self.status.update({"mode":"ebpf+bcc","visibility":"full","privileged":True,"ebpf_available":True,
-            "messages":["Kernel-assisted IPv4/IPv6 connect syscall and exec capture active; DNS names and ICMP remain best-effort."]})
+            "messages":["Kernel-assisted IPv4/IPv6 connect, exec, and file-open capture active; DNS names and ICMP remain best-effort."]})
         perf=asyncio.create_task(asyncio.to_thread(self._perf_loop))
         try:
             while not self.stop_event.is_set():

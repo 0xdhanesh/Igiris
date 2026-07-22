@@ -67,8 +67,17 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: npm run build
+      - name: Update packaged frontend
+        run: cp -r frontend/dist/* src/igiris/static/
       - name: Verify packaged frontend is current
-        run: diff -qr frontend/dist src/igiris/static
+        run: |
+          if git diff --quiet src/igiris/static; then
+            echo "Frontend assets are up to date"
+          else
+            echo "ERROR: Frontend assets differ from built output"
+            git diff src/igiris/static
+            exit 1
+          fi
 
   package:
     name: Package build
@@ -121,3 +130,4 @@ jobs:
           test "$PYTHON_RESULT" = success
           test "$FRONTEND_RESULT" = success
           test "$PACKAGE_RESULT" = success
+
