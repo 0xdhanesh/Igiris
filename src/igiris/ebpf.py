@@ -102,18 +102,18 @@ class BccCollector(PollingCollector):
     def _artifact_kind(path:str)->str:
         name=Path(path).name
         return "library" if ".so" in name and (name.endswith(".so") or ".so." in name) else "file"
-    def _persist_kernel_paths(self,pid:int,root:int,paths:set[str]):
+    def _persist_kernel_paths(self,pid:int,root:int,paths:set[str],source:str="ebpf_open_network_active"):
         if not paths: return
         now=datetime.now(timezone.utc)
         self.store.upsert_artifacts([ProcessArtifact(pid=pid,root_pid=root,kind=self._artifact_kind(path),path=path,
-            source="ebpf_open",first_seen=now,last_seen=now) for path in paths])
+            source=source,first_seen=now,last_seen=now) for path in paths])
     def _consume_file(self,cpu,data,size):
         raw=self._bpf["file_events"].event(data); pid=int(raw.pid)
         path=bytes(raw.path).split(b"\0",1)[0].decode(errors="replace")
         if not path: return
         root=self._network_roots.get(pid)
         if root is not None:
-            self._persist_kernel_paths(pid,root,{path}); return
+            self._persist_kernel_paths(pid,root,{path},"ebpf_open_network_active"); return
         paths=self._pending_paths.setdefault(pid,set())
         if len(paths)<256: paths.add(path)
         if len(self._pending_paths)>4096: self._pending_paths.pop(next(iter(self._pending_paths)))
@@ -127,7 +127,7 @@ class BccCollector(PollingCollector):
             self._network_roots.pop(pid,None); self._pending_paths.pop(pid,None)
             if comm not in self.settings.network_tool_set: return
             self._network_roots[pid]=root
-            self._persist_kernel_paths(pid,root,self._pending_paths.pop(pid,set()))
+            self._persist_kernel_paths(pid,root,self._pending_paths.pop(pid,set()),"ebpf_open_before_connect")
             self.store.add_event(Event(ts=datetime.now(timezone.utc),type="exec_network_tool",pid=pid,root_pid=root,exe_path=node.exe_path,exe_hash=node.exe_hash,
                 family="ipv6" if comm=="ping6" else "unknown",domain_source="none",raw_meta={"tool":comm,"source":"ebpf_sched_exec"}))
             query=dns_query_from_tool(snap)
@@ -136,7 +136,7 @@ class BccCollector(PollingCollector):
                     family="unknown",protocol="dns",domain=query,domain_source="observed_dns",raw_meta={"tool":comm,"source":"ebpf_sched_exec"}))
             return
         self._network_roots[pid]=root
-        self._persist_kernel_paths(pid,root,self._pending_paths.pop(pid,set()))
+        self._persist_kernel_paths(pid,root,self._pending_paths.pop(pid,set()),"ebpf_open_before_connect")
         family="ipv6" if int(raw.family)==socket.AF_INET6 else "ipv4"
         packed=bytes(raw.addr)[:16 if family=="ipv6" else 4]
         try: address=socket.inet_ntop(socket.AF_INET6 if family=="ipv6" else socket.AF_INET,packed)

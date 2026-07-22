@@ -71,7 +71,7 @@ class Store:
         with self.lock:
             self.conn.executemany("""INSERT INTO process_artifacts(pid,root_pid,kind,path,source,first_seen,last_seen)
                 VALUES(:pid,:root_pid,:kind,:path,:source,:first_seen,:last_seen)
-                ON CONFLICT(root_pid,pid,kind,path) DO UPDATE SET source=excluded.source,last_seen=excluded.last_seen""",rows)
+                ON CONFLICT(root_pid,pid,kind,path) DO UPDATE SET source=CASE WHEN process_artifacts.source LIKE 'ebpf_open%' THEN process_artifacts.source ELSE excluded.source END,last_seen=excluded.last_seen""",rows)
             self.conn.commit()
     def list_artifacts(self,root_pid:int,pid:int)->list[ProcessArtifact]:
         with self.lock:
