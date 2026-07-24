@@ -13,12 +13,13 @@ BPF_PROGRAM = r"""
 #include <uapi/linux/in.h>
 #include <uapi/linux/in6.h>
 #include <linux/sched.h>
-struct evt_t { u32 pid; u32 ppid; u32 kind; s32 retval; u16 family; u16 dport; unsigned char addr[16]; char comm[16]; };
+struct evt_t { u32 pid; u32 ppid; u32 kind; s32 retval; u16 family; u16 dport; unsigned char addr[16]; char comm[16]; s32 stack_id; };
 struct file_evt_t { u32 pid; u32 ppid; char path[256]; };
 struct pending_t { struct evt_t event; };
 BPF_PERF_OUTPUT(events);
 BPF_PERF_OUTPUT(file_events);
 BPF_HASH(connecting, u64, struct pending_t);
+BPF_STACK_TRACE(user_stacks, 16384);
 static void identity(struct evt_t *e) {
   e->pid=bpf_get_current_pid_tgid()>>32;
   struct task_struct *task=(struct task_struct *)bpf_get_current_task();
@@ -29,7 +30,8 @@ TRACEPOINT_PROBE(syscalls, sys_enter_connect) {
   u64 tid=bpf_get_current_pid_tgid();
   u16 family=0;
   if (!args->uservaddr || args->addrlen < sizeof(family) || bpf_probe_read_user(&family,sizeof(family),(void *)args->uservaddr)) return 0;
-  struct pending_t pending={}; identity(&pending.event); pending.event.kind=1; pending.event.family=family;
+  struct pending_t pending={}; identity(&pending.event); pending.event.kind=1; pending.event.family=family; pending.event.stack_id=-1;
+  pending.event.stack_id = user_stacks.get_stackid(args, BPF_F_USER_STACK | BPF_F_FAST_STACK_CMP);
   if (family==AF_INET) {
     struct sockaddr_in sa={};
     if (args->addrlen < sizeof(sa) || bpf_probe_read_user(&sa,sizeof(sa),(void *)args->uservaddr)) return 0;
@@ -93,7 +95,7 @@ def capability_report()->dict:
         "messages":messages}
 
 class BccCollector(PollingCollector):
-    """Kernel connect, exec, and file-open history plus live /proc enrichment."""
+    """Kernel connect, exec, and file-open history plus live /proc enrichment. Now with user-space stack tracing for call-site attribution (v1.0)."""
     def __init__(self,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self._pending_paths:dict[int,set[str]]={}
@@ -102,6 +104,27 @@ class BccCollector(PollingCollector):
     def _artifact_kind(path:str)->str:
         name=Path(path).name
         return "library" if ".so" in name and (name.endswith(".so") or ".so." in name) else "file"
+    @staticmethod
+    def _decode_symbol_part(value):
+        return value.decode(errors="replace") if isinstance(value,bytes) else value
+    def _resolve_stack_trace(self,pid:int,stack_id:int)->list[dict]:
+        """Resolve an ordered user stack while the process mappings still exist."""
+        if stack_id < 0:
+            return []
+        try:
+            cache=self._bpf._sym_cache(pid)
+            frames=[]
+            for address in self._bpf["user_stacks"].walk(stack_id):
+                symbol,offset,module=cache.resolve(int(address),True)
+                frames.append({
+                    "library":self._decode_symbol_part(module),
+                    "symbol":self._decode_symbol_part(symbol),
+                    "offset":hex(int(offset)),
+                    "raw_ip":hex(int(address)),
+                })
+            return frames
+        except Exception:
+            return []
     def _persist_kernel_paths(self,pid:int,root:int,paths:set[str],source:str="ebpf_open_network_active"):
         if not paths: return
         now=datetime.now(timezone.utc)
@@ -120,6 +143,7 @@ class BccCollector(PollingCollector):
     def _consume(self,cpu,data,size):
         raw=self._bpf["events"].event(data); pid=int(raw.pid); ppid=int(raw.ppid); kind=int(raw.kind)
         comm=bytes(raw.comm).split(b"\0",1)[0].decode(errors="replace") or f"pid-{pid}"
+        stack_id = int(getattr(raw, 'stack_id', -1))
         table=snapshot_processes(); snap=table.get(pid) or ProcessSnapshot(pid,ppid,comm,None,comm,None); table.setdefault(pid,snap)
         root=resolve_root(pid,table); node=to_node(snap,root); persist_lineage(self.store,pid,table,root); persist_advanced_artifacts(self.store,pid,root)
         if kind==2:
@@ -144,20 +168,37 @@ class BccCollector(PollingCollector):
         domain,source=self.domains.lookup(pid,address)
         retval=int(raw.retval)
         success=True if retval==0 else None if retval==-115 else False
+        stack_trace=self._resolve_stack_trace(pid,stack_id)
+        call_site=next(({
+            **frame,
+            "source":"bpf_stack_trace_user_v1",
+            "resolution":"top_resolved_user_frame",
+        } for frame in stack_trace if frame.get("library")),None)
+        raw_meta = {
+            "source": "ebpf_sys_connect",
+            "ppid": ppid,
+            "retval": retval,
+            "call_site": call_site,
+            "stack_id": stack_id,
+            "stack_trace": stack_trace,
+        }
+        if call_site:
+            raw_meta["call_site_source"] = "user_space_stack_v1.0"
         self.store.add_event(Event(ts=datetime.now(timezone.utc),type="connect",pid=pid,root_pid=root,exe_path=node.exe_path,exe_hash=node.exe_hash,
             family=family,protocol="ip-connect",raddr=address,rport=socket.ntohs(int(raw.dport)),domain=domain,domain_source=source,
-            success=success,raw_meta={"source":"ebpf_sys_connect","ppid":ppid,"retval":retval}))
+            success=success,raw_meta=raw_meta))
     def _perf_loop(self):
         while not self.stop_event.is_set(): self._bpf.perf_buffer_poll(timeout=250)
     async def run(self):
         from bcc import BPF
         self._bpf=BPF(text=BPF_PROGRAM)
+        self._bpf["user_stacks"] = self._bpf.get_table("user_stacks")
         self._bpf["events"].open_perf_buffer(self._consume,page_cnt=64)
         # Keep file-open traffic isolated so it cannot crowd connect/exec events out.
         self._bpf["file_events"].open_perf_buffer(self._consume_file,page_cnt=256)
         self._seen=set(snapshot_processes())
-        self.status.update({"mode":"ebpf+bcc","visibility":"full","privileged":True,"ebpf_available":True,
-            "messages":["Kernel-assisted IPv4/IPv6 connect, exec, and file-open capture active; DNS names and ICMP remain best-effort."]})
+        self.status.update({"mode":"ebpf+bcc+userstack","visibility":"full","privileged":True,"ebpf_available":True,
+            "messages":["Kernel-assisted IPv4/IPv6 connect with v1.0 user-space stack tracing for precise call-site (library+offset). Temporal correlation remains as fallback."]})
         perf=asyncio.create_task(asyncio.to_thread(self._perf_loop))
         try:
             while not self.stop_event.is_set():

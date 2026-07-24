@@ -15,6 +15,24 @@ from .store import Store
 EXPORT_FIELDS=["ts","type","pid","root_pid","exe_path","exe_hash","family","protocol","raddr","rport","domain","domain_source","success","raw_meta"]
 CSV_FORMULA_PREFIXES=("=","+","-","@")
 
+def _normalized_module(value:str|None)->str:
+    return (value or "").removesuffix(" (deleted)")
+
+def _library_stack_traces(path:str,events)->list[dict]:
+    normalized=_normalized_module(path)
+    matches=[]
+    for event in events:
+        frames=event.raw_meta.get("stack_trace") or []
+        if not frames and event.raw_meta.get("call_site"):
+            frames=[event.raw_meta["call_site"]]
+        attributed=[frame for frame in frames
+            if _normalized_module(frame.get("library"))==normalized
+            or (frame.get("library") and Path(_normalized_module(frame["library"])).name==Path(normalized).name)]
+        if attributed:
+            matches.append({"event_id":event.id,"ts":event.ts,"domain":event.domain,"raddr":event.raddr,
+                "rport":event.rport,"frames":frames,"attributed_frames":attributed})
+    return matches
+
 def _application_version()->str:
     for path in (Path("/opt/igiris/version.txt"),Path(__file__).resolve().parents[2]/"version.txt"):
         try:
@@ -109,12 +127,19 @@ def create_app(settings:Settings|None=None, store:Store|None=None)->FastAPI:
         processes=db.list_processes(root_pid); process=next((item for item in processes if item.pid==pid),None)
         if process is None: raise HTTPException(404,"Process not found in parent lineage")
         artifacts=db.list_artifacts(root_pid,pid)
+        network=db.list_events(root_pid=root_pid,limit=2000,mode="combined",process_pid=pid)
         status=app.state.collector_status
+        libraries=[]
+        for item in artifacts:
+            if item.kind!="library": continue
+            traces=_library_stack_traces(item.path,network)
+            libraries.append({**item.model_dump(mode="json"),
+                "network_related":item.source.startswith("ebpf_open") or bool(traces),
+                "stack_traces":traces})
         return {"process":process,"commands":db.list_process_subtree(root_pid,pid),
-            "libraries":[{**item.model_dump(mode="json"),"network_related":item.source.startswith("ebpf_open")}
-                for item in artifacts if item.kind=="library"],
+            "libraries":libraries,
             "files":[item for item in artifacts if item.kind=="file"],
-            "network":db.list_events(root_pid=root_pid,limit=2000,mode="combined",process_pid=pid),
+            "network":network,
             "collector":{"mode":status.get("mode"),"visibility":status.get("visibility"),"ebpf_available":status.get("ebpf_available",False)},
             "evidence_semantics":{"library_visibility":"kernel_events" if status.get("ebpf_available") else "observed_snapshot",
                 "file_visibility":"kernel_events" if status.get("ebpf_available") else "observed_snapshot",
