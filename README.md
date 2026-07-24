@@ -74,7 +74,9 @@ Igiris separates evidence types so analysts can judge what a record proves.
 | **Enriched** | Derived from observed data, such as a SHA-256 digest or parsed executable metadata. |
 | **Heuristic** | A useful lead that is not proof, such as an executable residing under a commonly writable path. |
 
-A library shown under a process means that it was mapped when Igiris inspected that process. It does **not** by itself prove that the library selected a destination or initiated a connection. Planned call-site attribution will narrow this relationship while retaining explicit confidence labels.
+A library shown under a process means that it was mapped when Igiris inspected that process. It does **not** by itself prove that the library selected a destination or initiated a connection.
+
+As of v1.1, Igiris now performs **user-space stack tracing** on `sys_enter_connect` using `bpf_get_stackid(BPF_F_USER_STACK)`. The top user-space frame is resolved to the responsible library and instruction offset. This data appears in `raw_meta.call_site` on connect events. The previous temporal library correlation remains as a fallback. This significantly improves visibility for reverse engineers and malware analysts.
 
 ## Architecture
 

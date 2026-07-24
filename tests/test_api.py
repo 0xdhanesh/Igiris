@@ -76,6 +76,23 @@ def test_advanced_library_payload_exposes_network_related_marker(client, store):
     assert body["libraries"][0]["network_related"] is True
 
 
+def test_advanced_library_payload_correlates_offsets_and_full_stack(client, store):
+    seed(store)
+    now=datetime.now(timezone.utc)
+    store.upsert_artifacts([ProcessArtifact(pid=7,root_pid=7,kind="library",path="/usr/lib/libssl.so.3",source="proc_maps",first_seen=now,last_seen=now)])
+    frames=[
+        {"library":"/usr/lib/libssl.so.3","symbol":"SSL_connect","offset":"0x2a","raw_ip":"0x1010"},
+        {"library":"/usr/lib/libc.so.6","symbol":"connect","offset":"0x10","raw_ip":"0x2020"},
+    ]
+    store.add_event(Event(ts=now,type="connect",pid=7,root_pid=7,exe_path="/usr/bin/wget",family="ipv4",protocol="ip-connect",raddr="192.0.2.1",rport=443,domain_source="none",raw_meta={"stack_trace":frames}))
+
+    library=client.get("/api/parents/7/processes/7/advanced").json()["libraries"][0]
+
+    assert library["network_related"] is True
+    assert library["stack_traces"][0]["frames"]==frames
+    assert library["stack_traces"][0]["attributed_frames"]==[frames[0]]
+
+
 def test_csv_export_is_evidence_ready(client, store):
     seed(store)
     response = client.get("/api/export.csv?root_pid=7")
