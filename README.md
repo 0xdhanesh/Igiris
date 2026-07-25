@@ -1,24 +1,24 @@
-# Igiris - Blood-Red Commander
+# Igris - Blood-Red Commander
 
 <p align="center">
-  <img src="./assets/igiris_0xdhanesh.png" alt="Shadow-Army-Igiris" width="75%">
+  <img src="./assets/igiris_0xdhanesh.png" alt="Shadow-Army-Igris" width="75%">
 </p>
 
 **Local-first Linux process and network evidence for defenders, incident responders, and authorized security testers.**
 
-Igiris helps answer a deceptively difficult host-investigation question:
+Igris helps answer a deceptively difficult host-investigation question:
 
 > Which process communicated, what executable launched it, what was loaded into that process, where did it connect, and what evidence supports the conclusion?
 
-Linux exposes much of this information, but it is fragmented across process metadata, socket state, executable mappings, command lines, and short-lived kernel events. Igiris collects that evidence into a single investigation timeline without requiring a cloud telemetry service.
+Linux exposes much of this information, but it is fragmented across process metadata, socket state, executable mappings, command lines, and short-lived kernel events. Igris collects that evidence into a single investigation timeline without requiring a cloud telemetry service.
 
-Igiris is an investigation and evidence tool. It does not automatically block traffic, declare a process malicious, or claim that every shared library mapped into a network-active process caused the connection.
+Igris is an investigation and evidence tool. It does not automatically block traffic, declare a process malicious, or claim that every shared library mapped into a network-active process caused the connection.
 
-## Who Igiris is for
+## Who Igris is for
 
 ### Blue Teams and incident responders
 
-Use Igiris to:
+Use Igris to:
 
 - identify the exact process and executable associated with observed network activity;
 - follow parent/child lineage from an application to a network-active helper process;
@@ -32,7 +32,7 @@ Typical investigations include browser helper processes, unexpected background s
 
 ### Red Teams and authorized security testers
 
-Use Igiris in systems you own or are explicitly authorized to assess to:
+Use Igris in systems you own or are explicitly authorized to assess to:
 
 - validate whether test payloads produce expected process and network telemetry;
 - understand which stage of a controlled execution chain initiates a connection;
@@ -41,11 +41,11 @@ Use Igiris in systems you own or are explicitly authorized to assess to:
 - test detections for unusual executable paths, process lineage, and destination changes;
 - document observable artifacts during adversary-emulation exercises.
 
-Igiris is not intended for covert monitoring, unauthorized access, credential theft, or deployment outside an approved security scope.
+Igris is not intended for covert monitoring, unauthorized access, credential theft, or deployment outside an approved security scope.
 
-## What Igiris records today
+## What Igris records today
 
-Igiris currently provides:
+Igris currently provides:
 
 - process snapshots with PID, parent PID, root application, user, executable path, command line, and first/last-seen times;
 - SHA-256 enrichment for readable executables;
@@ -65,7 +65,7 @@ Collection fidelity is always shown in the health response and interface. Runnin
 
 ## Evidence semantics
 
-Igiris separates evidence types so analysts can judge what a record proves.
+Igris separates evidence types so analysts can judge what a record proves.
 
 | Classification | Meaning |
 |---|---|
@@ -74,9 +74,9 @@ Igiris separates evidence types so analysts can judge what a record proves.
 | **Enriched** | Derived from observed data, such as a SHA-256 digest or parsed executable metadata. |
 | **Heuristic** | A useful lead that is not proof, such as an executable residing under a commonly writable path. |
 
-A library shown under a process means that it was mapped when Igiris inspected that process. It does **not** by itself prove that the library selected a destination or initiated a connection.
+A library shown under a process means that it was mapped when Igris inspected that process. It does **not** by itself prove that the library selected a destination or initiated a connection.
 
-As of v1.1, Igiris now performs **user-space stack tracing** on `sys_enter_connect` using `bpf_get_stackid(BPF_F_USER_STACK)`. The top user-space frame is resolved to the responsible library and instruction offset. This data appears in `raw_meta.call_site` on connect events. The previous temporal library correlation remains as a fallback. This significantly improves visibility for reverse engineers and malware analysts.
+As of v1.2, Igris now performs **user-space stack tracing** on `sys_enter_connect` using `bpf_get_stackid(BPF_F_USER_STACK)`. The top user-space frame is resolved to the responsible library and instruction offset. This data appears in `raw_meta.call_site` on connect events. The previous temporal library correlation remains as a fallback. This significantly improves visibility for reverse engineers and malware analysts.
 
 ## Architecture
 
@@ -113,7 +113,7 @@ The portable fallback inspects Linux process, mapping, file-descriptor, and sock
 
 ### Kernel event collection
 
-The current code can use an optional BCC path where supported. Kernel event collection requires elevated privilege and compatible kernel tooling. When it cannot initialize, Igiris reports reduced visibility and continues with polling.
+The current code can use an optional BCC path where supported. Kernel event collection requires elevated privilege and compatible kernel tooling. When it cannot initialize, Igris reports reduced visibility and continues with polling.
 
 A libbpf CO-RE collector is planned to replace runtime-compiled BCC as the primary event-driven path. See [Roadmap](#roadmap).
 
@@ -151,7 +151,7 @@ sudo systemctl status igiris
 sudo journalctl -u igiris -f
 ```
 
-Open the interface using the address configured in `/etc/igiris/igiris.env`. The default configuration is local-only. If LAN access is enabled, add only the required hostnames or addresses to `IGIRIS_ALLOWED_HOSTS` and place TLS or an authenticated tunnel in front of Igiris.
+Open the interface using the address configured in `/etc/igiris/igiris.env`. The default configuration is local-only. If LAN access is enabled, add only the required hostnames or addresses to `IGIRIS_ALLOWED_HOSTS` and place TLS or an authenticated tunnel in front of Igris.
 
 ### Change the unlock password
 
@@ -197,7 +197,7 @@ For collection testing, use only hosts, applications, and networks within your a
 
 ## Investigation workflow
 
-1. **Confirm visibility.** Check whether Igiris reports full kernel-assisted collection or limited polling.
+1. **Confirm visibility.** Check whether Igris reports full kernel-assisted collection or limited polling.
 2. **Select an application root.** Review its user, executable, activity counts, and destinations.
 3. **Follow the process tree.** Identify the exact child process associated with the evidence.
 4. **Inspect Advanced Mode.** Review invocation, executable digest, mapped libraries, open files, and process-scoped network events.
@@ -221,7 +221,7 @@ When the service is running, the OpenAPI description is available from the confi
 
 ## Security model
 
-- **Local-first:** evidence is stored locally in SQLite and is not uploaded by Igiris.
+- **Local-first:** evidence is stored locally in SQLite and is not uploaded by Igris.
 - **Loopback by default:** the packaged service does not listen on the LAN unless explicitly reconfigured.
 - **Host and Origin checks:** the API validates accepted host/origin values.
 - **No plaintext password storage:** authentication uses a root-owned, owner-only salted scrypt verifier.
@@ -302,4 +302,4 @@ cd frontend && npm test && npm run build && npm audit --audit-level=high
 
 ## Responsible use
 
-Use Igiris only on systems and networks you own or have explicit permission to monitor or assess. Follow applicable law, organizational policy, data-retention requirements, and rules of engagement.
+Use Igris only on systems and networks you own or have explicit permission to monitor or assess. Follow applicable law, organizational policy, data-retention requirements, and rules of engagement.

@@ -1,12 +1,12 @@
 # eBPF availability and recovery on Kali ARM64
 
-Igiris uses BCC to compile and load an eBPF program at runtime. If any BCC
-prerequisite is unavailable, Igiris deliberately falls back to `/proc` polling.
+Igris uses BCC to compile and load an eBPF program at runtime. If any BCC
+prerequisite is unavailable, Igris deliberately falls back to `/proc` polling.
 The fallback remains useful, but it can miss processes and connections that
 start and finish between polling intervals.
 
 These instructions assume a Kali ARM64 system (`uname -m` reports `aarch64`).
-Run commands from the Igiris repository unless a command says otherwise.
+Run commands from the Igris repository unless a command says otherwise.
 
 ## 1. Check the running kernel and architecture
 
@@ -32,7 +32,7 @@ sudo bpftool feature probe kernel
 features accurately. Look for supported BPF syscall, program types, map types,
 and tracing helpers. `/sys/kernel/btf/vmlinux` confirms that the running kernel
 publishes BTF metadata; it does not, by itself, prove that BCC can compile and
-load Igiris's program.
+load Igris's program.
 
 If `bpftool` is not installed, install it with:
 
@@ -48,12 +48,12 @@ grep -E '^CONFIG_(BPF|BPF_SYSCALL|BPF_JIT|BPF_EVENTS|KPROBES|KPROBE_EVENTS|TRACE
   "/boot/config-$(uname -r)"
 ```
 
-At minimum, Igiris's BCC path needs BPF syscall support and tracing facilities.
+At minimum, Igris's BCC path needs BPF syscall support and tracing facilities.
 Kali's standard ARM64 kernel normally enables these options.
 
-## 3. Check the BCC runtime prerequisites used by Igiris
+## 3. Check the BCC runtime prerequisites used by Igris
 
-Igiris requires all three of the following:
+Igris requires all three of the following:
 
 1. The service runs as root.
 2. the `bcc` Python module is importable;
@@ -142,19 +142,19 @@ The image and headers selected for boot must have the same full release. Do not
 symlink headers from a different kernel version into `/lib/modules`; generated
 headers and kernel ABI details must match the running kernel.
 
-## 5. Reinstall and restart Igiris
+## 5. Reinstall and restart Igris
 
 After booting the kernel with matching headers:
 
 ```bash
-cd /home/kali/Desktop/Igiris
+cd /home/kali/Desktop/Igris
 sudo bash packaging/install.sh
 sudo systemctl restart igiris
 sudo journalctl -u igiris -n 100 --no-pager
 ```
 
 The installer creates a virtual environment with `--system-site-packages`, which
-allows it to import Kali's `python3-bpfcc` module. If Igiris was installed by a
+allows it to import Kali's `python3-bpfcc` module. If Igris was installed by a
 different method, verify the exact service interpreter instead of assuming that
 a successful system Python import is sufficient:
 
@@ -165,9 +165,9 @@ sudo /opt/igiris/.venv/bin/python -c 'import bcc; print(bcc.__file__)'
 Never put a sudo password in this file, a command line, shell history, a service
 unit, or an environment file. Enter it only at sudo's interactive prompt.
 
-## 6. Confirm that Igiris is using eBPF
+## 6. Confirm that Igris is using eBPF
 
-Open the Igiris interface and check collection health. Full collection reports
+Open the Igris interface and check collection health. Full collection reports
 mode `ebpf+bcc`, visibility `full`, and `ebpf_available: true`. The status
 message should say that kernel-assisted connect-syscall and exec capture is
 active.
@@ -180,7 +180,7 @@ sudo journalctl -u igiris -b --no-pager
 ```
 
 Generate a harmless local test event only on a host you are authorized to
-monitor, then confirm it appears in Igiris:
+monitor, then confirm it appears in Igris:
 
 ```bash
 curl -I http://127.0.0.1:8787/

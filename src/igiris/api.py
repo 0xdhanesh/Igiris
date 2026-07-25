@@ -22,9 +22,9 @@ def _library_stack_traces(path:str,events)->list[dict]:
     normalized=_normalized_module(path)
     matches=[]
     for event in events:
-        frames=event.raw_meta.get("stack_trace") or []
-        if not frames and event.raw_meta.get("call_site"):
-            frames=[event.raw_meta["call_site"]]
+        frames=event.raw_meta.get("stack_trace") or event.raw_meta.get("exec_stack_trace") or []
+        if not frames and (event.raw_meta.get("call_site") or event.raw_meta.get("exec_call_site")):
+            frames=[event.raw_meta.get("call_site") or event.raw_meta["exec_call_site"]]
         attributed=[frame for frame in frames
             if _normalized_module(frame.get("library"))==normalized
             or (frame.get("library") and Path(_normalized_module(frame["library"])).name==Path(normalized).name)]
@@ -32,6 +32,18 @@ def _library_stack_traces(path:str,events)->list[dict]:
             matches.append({"event_id":event.id,"ts":event.ts,"domain":event.domain,"raddr":event.raddr,
                 "rport":event.rport,"frames":frames,"attributed_frames":attributed})
     return matches
+
+def _lineage_for_event_processes(processes,network_pids:set[int]):
+    """Keep event processes and their ancestors through the investigation root."""
+    by_pid={process.pid:process for process in processes}
+    included=set()
+    for pid in network_pids:
+        current=by_pid.get(pid); seen=set()
+        while current and current.pid not in seen:
+            seen.add(current.pid); included.add(current.pid)
+            if current.pid==current.root_pid: break
+            current=by_pid.get(current.ppid)
+    return [process for process in processes if process.pid in included]
 
 def _application_version()->str:
     for path in (Path("/opt/igiris/version.txt"),Path(__file__).resolve().parents[2]/"version.txt"):
@@ -53,7 +65,7 @@ class LoginRequest(BaseModel):
 
 def create_app(settings:Settings|None=None, store:Store|None=None)->FastAPI:
     settings=settings or Settings(); db=store or Store(settings.database_path); db.initialize()
-    app_version=_application_version(); app=FastAPI(title="Igiris",version=app_version)
+    app_version=_application_version(); app=FastAPI(title="Igris",version=app_version)
     verifier=settings.resolve_password_verifier(); sessions=SessionManager(settings.session_ttl_seconds); login_limiter=LoginLimiter(settings.login_max_failures,settings.login_failure_window_seconds); password_check_slots=threading.BoundedSemaphore(settings.login_max_parallel_checks); allowed_hosts=settings.allowed_host_list; allowed_origin_hosts={host.strip("[]") for host in allowed_hosts}
     def is_api_path(path:str)->bool: return path=="/api" or path.startswith("/api/")
     @app.exception_handler(Exception)
@@ -116,18 +128,34 @@ def create_app(settings:Settings|None=None, store:Store|None=None)->FastAPI:
         events=db.list_events(root_pid=root_pid,baseline_only=baseline_only,mode=mode)
         if destination: events=[e for e in events if e.domain==destination or e.raddr==destination]
         network_pids={event.pid for event in events}
-        processes=[process for process in db.list_processes(root_pid) if process.pid in network_pids]
-        return {"parent":summaries[0],"processes":processes,"events":events,"baseline_ts":db.get_baseline()}
+        all_processes=db.list_processes(root_pid)
+        processes=_lineage_for_event_processes(all_processes,network_pids)
+        process_events={}
+        process_payload=[]
+        for process in processes:
+            subtree_pids={item.pid for item in db.list_process_subtree(root_pid,process.pid)}
+            subtree_events=[event for event in events if event.pid in subtree_pids]
+            process_events[str(process.pid)]=subtree_events
+            process_payload.append({**process.model_dump(mode="json"),
+                "subtree_event_count":len(subtree_events)})
+        return {"parent":summaries[0],"processes":process_payload,"events":events,
+            "process_events":process_events,"baseline_ts":db.get_baseline()}
     @app.get("/api/events")
-    def events(search:str|None=None,root_pid:int|None=None,pid:int|None=None,baseline_only:bool=False,mode:str=Query("combined",pattern="^(live|history|combined)$"),destination:str|None=None,limit:int=Query(500,ge=1,le=2000)):
-        evidence=db.list_events(root_pid,search,baseline_only,limit=limit,mode=mode,process_pid=pid)
+    def events(search:str|None=None,root_pid:int|None=None,pid:int|None=None,include_descendants:bool=False,baseline_only:bool=False,mode:str=Query("combined",pattern="^(live|history|combined)$"),destination:str|None=None,limit:int=Query(500,ge=1,le=2000)):
+        evidence=db.list_events(root_pid,search,baseline_only,limit=limit,mode=mode,process_pid=None if include_descendants else pid)
+        if include_descendants and root_pid is not None and pid is not None:
+            subtree_pids={process.pid for process in db.list_process_subtree(root_pid,pid)}
+            evidence=[event for event in evidence if event.pid in subtree_pids]
         return [event for event in evidence if not destination or event.domain==destination or event.raddr==destination]
     @app.get("/api/parents/{root_pid}/processes/{pid}/advanced")
     def advanced_process(root_pid:int,pid:int):
         processes=db.list_processes(root_pid); process=next((item for item in processes if item.pid==pid),None)
         if process is None: raise HTTPException(404,"Process not found in parent lineage")
         artifacts=db.list_artifacts(root_pid,pid)
-        network=db.list_events(root_pid=root_pid,limit=2000,mode="combined",process_pid=pid)
+        commands=db.list_process_subtree(root_pid,pid)
+        subtree_pids={item.pid for item in commands}
+        network=[event for event in db.list_events(root_pid=root_pid,limit=2000,mode="combined")
+            if event.pid in subtree_pids]
         status=app.state.collector_status
         libraries=[]
         for item in artifacts:
@@ -136,7 +164,7 @@ def create_app(settings:Settings|None=None, store:Store|None=None)->FastAPI:
             libraries.append({**item.model_dump(mode="json"),
                 "network_related":item.source.startswith("ebpf_open") or bool(traces),
                 "stack_traces":traces})
-        return {"process":process,"commands":db.list_process_subtree(root_pid,pid),
+        return {"process":process,"commands":commands,
             "libraries":libraries,
             "files":[item for item in artifacts if item.kind=="file"],
             "network":network,

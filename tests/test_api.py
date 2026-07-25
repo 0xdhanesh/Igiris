@@ -26,6 +26,22 @@ def test_parent_detail_contains_tree_and_events(client, store):
     assert [process["pid"] for process in body["processes"]] == [7]
 
 
+def test_parent_detail_keeps_ancestors_between_root_and_network_child(client, store):
+    seed(store)
+    now = datetime.now(timezone.utc)
+    store.upsert_process(ProcessNode(pid=8, ppid=7, root_pid=7, name="beru_demo", exe_path="/tmp/beru_demo", exe_hash=None, user="analyst", cmdline="beru_demo", first_seen=now, last_seen=now))
+    store.upsert_process(ProcessNode(pid=9, ppid=8, root_pid=7, name="ping", exe_path="/usr/bin/ping", exe_hash=None, user="analyst", cmdline="ping example.net", first_seen=now, last_seen=now))
+    store.add_event(Event(ts=now, type="icmp", pid=9, root_pid=7, exe_path="/usr/bin/ping", family="ipv4", protocol="icmp", domain="example.net", domain_source="observed_tool_arg", raw_meta={}))
+    body = client.get("/api/parents/7").json()
+    assert [(process["pid"], process["name"]) for process in body["processes"]] == [
+        (7, "wget"), (8, "beru_demo"), (9, "ping"),
+    ]
+    assert body["processes"][1]["subtree_event_count"] == 1
+    assert [(event["pid"],event["domain"]) for event in body["process_events"]["8"]] == [(9,"example.net")]
+    subtree = client.get("/api/events?root_pid=7&pid=8&include_descendants=true").json()
+    assert [(event["pid"], event["domain"]) for event in subtree] == [(9, "example.net")]
+
+
 def test_events_can_be_filtered_to_a_selected_process(client, store):
     seed(store)
     now = datetime.now(timezone.utc)
@@ -91,6 +107,22 @@ def test_advanced_library_payload_correlates_offsets_and_full_stack(client, stor
     assert library["network_related"] is True
     assert library["stack_traces"][0]["frames"]==frames
     assert library["stack_traces"][0]["attributed_frames"]==[frames[0]]
+
+
+def test_parent_library_is_correlated_to_descendant_exec_caller_stack(client, store):
+    seed(store)
+    now=datetime.now(timezone.utc)
+    child=ProcessNode(pid=8,ppid=7,root_pid=7,name="ping",exe_path="/usr/bin/ping",exe_hash=None,user="analyst",cmdline="ping example.test",first_seen=now,last_seen=now)
+    store.upsert_process(child)
+    store.upsert_artifacts([ProcessArtifact(pid=7,root_pid=7,kind="library",path="/tmp/libberu.so",source="ebpf_execve_caller_stack",first_seen=now,last_seen=now)])
+    frame={"library":"/tmp/libberu.so","symbol":"beru_ping","offset":"0x2a","raw_ip":"0x1010"}
+    store.add_event(Event(ts=now,type="exec_network_tool",pid=8,root_pid=7,exe_path="/usr/bin/ping",family="unknown",domain="example.test",domain_source="observed_tool_arg",raw_meta={"exec_stack_trace":[frame],"exec_call_site":frame}))
+
+    body=client.get("/api/parents/7/processes/7/advanced").json()
+
+    assert body["network"][0]["pid"] == 8
+    assert body["libraries"][0]["network_related"] is True
+    assert body["libraries"][0]["stack_traces"][0]["attributed_frames"] == [frame]
 
 
 def test_csv_export_is_evidence_ready(client, store):

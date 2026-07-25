@@ -1,5 +1,5 @@
 [Unit]
-Description=Igiris network process investigation daemon
+Description=Igris network process investigation daemon
 Documentation=https://localhost:8787
 After=network.target
 

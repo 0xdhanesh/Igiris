@@ -1,10 +1,10 @@
-# Igiris development instructions
+# Igris development instructions
 
 This document is the working guide for human contributors and AI agents. It describes the repository contract, development setup, architecture, verification commands, deployment flow, and the conditions for calling a task complete.
 
 ## Project scope
 
-Igiris is a local-first Linux process and network investigation tool. It collects process lineage, executable metadata, network events, and advanced artifacts into SQLite, exposes them through a FastAPI API, and renders a React/Vite investigation UI. Use it only on systems and networks you own or are explicitly authorized to monitor.
+Igris is a local-first Linux process and network investigation tool. It collects process lineage, executable metadata, network events, and advanced artifacts into SQLite, exposes them through a FastAPI API, and renders a React/Vite investigation UI. Use it only on systems and networks you own or are explicitly authorized to monitor.
 
 ## Repository layout
 
@@ -35,7 +35,7 @@ assets/                 project artwork and documentation assets
 Requirements: Linux, Python 3.11 or newer, Node.js/npm for frontend work, and Git. Root privileges and BCC/kernel headers are required only for full live eBPF collection, not for ordinary unit tests.
 
 ```bash
-cd /home/kali/Desktop/Igiris
+cd /home/kali/Desktop/Igris
 python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[dev]'
 cd frontend
