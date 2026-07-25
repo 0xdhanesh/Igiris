@@ -8,7 +8,7 @@ export async function loginWithPassword(password, fetchImpl = fetch) {
   if (!response.ok) {
     let detail = response.status === 429
       ? 'Too many failed login attempts. Try again later.'
-      : 'Unable to unlock Igiris.';
+      : 'Unable to unlock Igris.';
     try {
       const body = await response.json();
       if (body?.detail) detail = body.detail;

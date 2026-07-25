@@ -1,8 +1,8 @@
-# Security Scanning & CI/CD Analysis for Igiris
+# Security Scanning & CI/CD Analysis for Igris
 
 ## Overview
 
-This document details the security and CI/CD infrastructure implemented in the Igiris repository. Each section explains the relevant configuration, associated repository settings, and why each measure matters for code quality and security.
+This document details the security and CI/CD infrastructure implemented in the Igris repository. Each section explains the relevant configuration, associated repository settings, and why each measure matters for code quality and security.
 
 ---
 
@@ -12,8 +12,8 @@ This document details the security and CI/CD infrastructure implemented in the I
 
 #### Related configuration files
 
-- `.github/workflows/security.yml` — lines 20–38 (`secret-scan` job)
-- `.gitignore` — lines 1–9 (prevention at source)
+- `.github/workflows/security.yml` - lines 20–38 (`secret-scan` job)
+- `.gitignore` - lines 1–9 (prevention at source)
 
 #### Repository settings
 
@@ -63,7 +63,7 @@ jobs:
 
 ##### Related configuration files
 
-- `.github/workflows/security.yml` — lines 40–67 (`sast` job)
+- `.github/workflows/security.yml` - lines 40–67 (`sast` job)
 
 ##### Repository settings
 
@@ -102,7 +102,7 @@ Semgrep uses the same push, pull-request, weekly, and manual triggers as the sec
 
 ##### Related configuration files
 
-- `.github/workflows/security.yml` — lines 40–80 (`sast` job)
+- `.github/workflows/security.yml` - lines 40–80 (`sast` job)
 
 ##### Workflow configuration
 
@@ -137,10 +137,10 @@ Semgrep uses the same push, pull-request, weekly, and manual triggers as the sec
 
 #### Related configuration files
 
-- `.github/workflows/security.yml` — lines 82–112 (`dependencies` job)
-- `pyproject.toml` — lines 11–19 (Python dependencies)
-- `frontend/package.json` — npm dependencies
-- `.github/dependabot.yml` — automated dependency updates
+- `.github/workflows/security.yml` - lines 82–112 (`dependencies` job)
+- `pyproject.toml` - lines 11–19 (Python dependencies)
+- `frontend/package.json` - npm dependencies
+- `.github/dependabot.yml` - automated dependency updates
 
 #### Workflow configuration
 
@@ -202,8 +202,8 @@ updates:
 
 #### Related configuration files
 
-- `.github/workflows/codeql.yml` — CodeQL workflow
-- `pyproject.toml` — Python project configuration
+- `.github/workflows/codeql.yml` - CodeQL workflow
+- `pyproject.toml` - Python project configuration
 
 #### Workflow configuration
 
@@ -254,8 +254,8 @@ jobs:
 
 #### Related configuration files
 
-- `.github/workflows/security.yml` — lines 114–126 (`workflow-security` job)
-- `.github/workflows/*.yml` — all GitHub Actions workflows
+- `.github/workflows/security.yml` - lines 114–126 (`workflow-security` job)
+- `.github/workflows/*.yml` - all GitHub Actions workflows
 
 #### Workflow configuration
 
@@ -383,8 +383,8 @@ frontend:
 
 ##### Related files
 
-- `frontend/package.json` — npm configuration
-- `src/igiris/static/` — packaged frontend assets
+- `frontend/package.json` - npm configuration
+- `src/igiris/static/` - packaged frontend assets
 
 ##### Why it matters
 
@@ -418,8 +418,8 @@ package:
 
 ##### Related files
 
-- `pyproject.toml` — package metadata and build configuration
-- `packaging/install.sh` — installation script
+- `pyproject.toml` - package metadata and build configuration
+- `packaging/install.sh` - installation script
 
 ##### Why it matters
 
@@ -651,9 +651,9 @@ List commands run and relevant results.
 
 #### Available templates
 
-- `bug.yml` — bug report form
-- `feature.yml` — feature request form
-- `config.yml` — issue routing and instructions
+- `bug.yml` - bug report form
+- `feature.yml` - feature request form
+- `config.yml` - issue routing and instructions
 
 #### Why it matters
 

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import socket
 
 from igiris.collectors import DomainCorrelator, PollingCollector, connection_to_event, detect_new_network_tools, dns_query_from_tool, historical_transitions, is_internal_api_connection, observed_domain_from_tool, persist_lineage
-from igiris.ebpf import BPF_PROGRAM
+from igiris.ebpf import BPF_PROGRAM, BccCollector
 from igiris.store import Store
 from igiris.processes import ProcessSnapshot
 
@@ -67,6 +67,13 @@ def test_url_hostname_is_observable_from_curl_and_wget_exec():
     assert observed_domain_from_tool(wget) == ("example.net", "observed_tool_arg")
 
 
+def test_ping_hostname_is_observable_from_its_command_line():
+    hostname = ProcessSnapshot(32, 10, "ping", "/usr/bin/ping", "ping -c 1 Example.NET", "analyst")
+    address = ProcessSnapshot(33, 10, "ping", "/usr/bin/ping", "ping -c 1 192.0.2.4", "analyst")
+    assert observed_domain_from_tool(hostname) == ("example.net", "observed_tool_arg")
+    assert observed_domain_from_tool(address) == (None, "none")
+
+
 def test_curl_socket_inherits_hostname_observed_in_its_command_line():
     conn = Conn(socket.AF_INET6, socket.SOCK_STREAM, Addr("2606:50c0:8002::153", 443), "ESTABLISHED", 20)
     event, _ = connection_to_event(conn, table(), DomainCorrelator())
@@ -116,6 +123,39 @@ def test_bpf_captures_file_paths_at_open_time():
     assert "TRACEPOINT_PROBE(syscalls, sys_enter_openat2)" in BPF_PROGRAM
     assert "BPF_PERF_OUTPUT(file_events)" in BPF_PROGRAM
     assert "bpf_probe_read_user_str(&e.path" in BPF_PROGRAM
+    assert "network_tool_pids.lookup(&e.pid)" in BPF_PROGRAM
+    assert "!shared_object(e.path)" in BPF_PROGRAM
+
+
+def test_bpf_captures_the_calling_stack_before_exec_replaces_the_process():
+    assert "TRACEPOINT_PROBE(syscalls, sys_enter_execve)" in BPF_PROGRAM
+    assert "BPF_PERF_OUTPUT(exec_events)" in BPF_PROGRAM
+    assert "e.stack_id=user_stacks.get_stackid" in BPF_PROGRAM
+
+
+def test_bcc_collector_keeps_exec_root_after_process_exits():
+    collector = BccCollector(None, SimpleNamespace(bind_port=8787), {})
+    collector._network_roots[39072] = 1200
+    partial = {39072: ProcessSnapshot(39072, 30000, "ping", None, "ping", None)}
+    assert collector._event_root(39072, 30000, 1, partial) == 1200
+    assert collector._event_root(39072, 30000, 2, partial) == 39072
+
+
+def test_bcc_exec_root_survives_a_short_lived_parent_missing_from_proc():
+    collector = BccCollector(None, SimpleNamespace(bind_port=8787), {})
+    collector._exec_roots[2200] = 1000
+    ping_only = {2300: ProcessSnapshot(2300, 2200, "ping", None, "ping example.com", None)}
+
+    assert collector._event_root(2300, 2200, 2, ping_only) == 1000
+    assert collector._exec_roots[2300] == 1000
+
+
+def test_exec_caller_prefers_the_invoking_library_over_libc_wrapper():
+    frames=[
+        {"library":"/usr/lib/libc.so.6","symbol":"execve"},
+        {"library":"/tmp/libberu.so","symbol":"beru_ping"},
+    ]
+    assert BccCollector._exec_caller(frames) == frames[1]
 
 
 def test_persist_lineage_keeps_meaningful_root_identity(tmp_path):

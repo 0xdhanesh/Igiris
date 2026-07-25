@@ -36,6 +36,11 @@ def observed_domain_from_tool(snapshot:ProcessSnapshot)->tuple[str|None,str]:
     """Return a hostname explicitly supplied to a supported network tool."""
     query=dns_query_from_tool(snapshot)
     if query: return query,"observed_dns"
+    if snapshot.name in {"ping","ping6"}:
+        target=_intent_target(snapshot.cmdline)
+        if target and not _looks_ip(target):
+            return target.rstrip(".").lower(),"observed_tool_arg"
+        return None,"none"
     if snapshot.name not in {"curl","wget"}: return None,"none"
     try: parts=shlex.split(snapshot.cmdline or "")[1:]
     except ValueError: parts=(snapshot.cmdline or "").split()[1:]
@@ -75,7 +80,7 @@ def local_interface_addresses()->set[str]:
     return addresses
 
 def is_internal_api_connection(connection,api_port:int,local_ips:set[str]|None=None)->bool:
-    """Ignore both accepted and local client connections to Igiris itself."""
+    """Ignore both accepted and local client connections to Igris itself."""
     lport=getattr(connection.laddr,"port",None) if connection.laddr else None
     if lport==api_port: return True
     rport=getattr(connection.raddr,"port",None) if connection.raddr else None
@@ -122,8 +127,9 @@ class PollingCollector:
             if snap.name in {"ping","ping6"}:
                 target=_intent_target(snap.cmdline)
                 self.store.add_event(Event(ts=datetime.now(timezone.utc),type="icmp",pid=snap.pid,root_pid=root,exe_path=node.exe_path,exe_hash=node.exe_hash,
-                    family="ipv6" if snap.name=="ping6" else "ipv4",protocol="icmpv6" if snap.name=="ping6" else "icmp",raddr=target,domain=target if target and not _looks_ip(target) else None,
-                    domain_source="none",raw_meta={"best_effort":True,"source":"network_tool_exec"}))
+                    family="ipv6" if snap.name=="ping6" else "ipv4",protocol="icmpv6" if snap.name=="ping6" else "icmp",
+                    raddr=target if target and _looks_ip(target) else None,domain=domain,domain_source=domain_source,
+                    raw_meta={"best_effort":True,"target_argument":target,"source":"network_tool_exec"}))
         self._seen=set(table)
         try: connections=psutil.net_connections(kind="inet")
         except (psutil.AccessDenied,OSError): connections=[]
