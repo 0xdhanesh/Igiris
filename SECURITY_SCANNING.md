@@ -153,7 +153,7 @@ jobs:
     steps:
       - name: Audit Python environment
         run: |
-          python -m pip install --upgrade pip==26.1.2 setuptools==83.0.0
+          python -m pip install --upgrade pip==26.2 setuptools==83.0.0
           python -m pip install -e . pip-audit==2.10.1
           python -m pip_audit --local
 
@@ -266,7 +266,7 @@ workflow-security:
   timeout-minutes: 10
   steps:
     - name: Install workflow auditor
-      run: python3 -m pip install zizmor==1.27.0
+      run: python3 -m pip install zizmor==1.28.0
 
     - name: Audit workflow definitions
       run: zizmor .github/workflows
@@ -277,7 +277,7 @@ workflow-security:
 - **Action pinning validation:** Detects unpinned or weakly pinned GitHub Actions references.
 - **Permission-scope validation:** Flags workflows that request unnecessarily broad permissions.
 - **CI/CD security checks:** Identifies workflow patterns that could expose credentials or permit privilege escalation.
-- **Pinned auditor version:** `zizmor==1.27.0` provides consistent audit behavior.
+- **Pinned auditor version:** `zizmor==1.28.0` provides consistent audit behavior.
 - **Continuous validation:** Workflow changes are checked for security regressions.
 
 #### Example action pinning

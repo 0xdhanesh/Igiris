@@ -1,11 +1,32 @@
 from pathlib import Path
-from pydantic import Field
+import warnings
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="IGIRIS_", env_file=".env", extra="ignore")
+    bind_mode: str = "localhost"
     bind_host: str = "127.0.0.1"
     bind_port: int = Field(default=8787,gt=0,le=65535)
+
+    @field_validator("bind_mode", mode="before")
+    @classmethod
+    def validate_bind_mode(cls, value: object) -> str:
+        mode = str(value).strip().lower()
+        if mode in {"localhost", "network"}:
+            return mode
+        warnings.warn(
+            f"Invalid IGIRIS_BIND_MODE={value!r}; falling back to 'localhost'.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return "localhost"
+
+    @property
+    def resolved_bind_host(self) -> str:
+        if "bind_host" in self.model_fields_set:
+            return self.bind_host
+        return "0.0.0.0" if self.bind_mode == "network" else "127.0.0.1"
     allowed_hosts: str = "127.0.0.1,localhost,[::1]"
     password_verifier: str | None = None
     password_verifier_file: str | None = None

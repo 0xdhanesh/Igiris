@@ -151,7 +151,51 @@ sudo systemctl status igiris
 sudo journalctl -u igiris -f
 ```
 
-Open the interface using the address configured in `/etc/igiris/igiris.env`. The default configuration is local-only. If LAN access is enabled, add only the required hostnames or addresses to `IGIRIS_ALLOWED_HOSTS` and place TLS or an authenticated tunnel in front of Igris.
+Open the interface using the address configured in `/etc/igiris/igiris.env`. The default configuration is local-only.
+
+### Choose the bind interface
+
+Igris supports two explicit bind modes in `/etc/igiris/igiris.env`:
+
+```ini
+# Secure default: listen only on this host.
+IGIRIS_BIND_MODE=localhost
+
+# Authorized LAN access: listen on every IPv4 interface.
+# IGIRIS_BIND_MODE=network
+```
+
+`localhost` resolves to `127.0.0.1`; `network` resolves to `0.0.0.0`. After changing the mode, restart the service:
+
+```bash
+sudo systemctl restart igiris
+sudo journalctl -u igiris -n 25 --no-pager
+```
+
+An existing explicit `IGIRIS_BIND_HOST` setting remains supported and takes precedence over `IGIRIS_BIND_MODE`. Remove that legacy override to use mode selection. An invalid mode emits a warning and falls back to localhost-only binding.
+
+**Security:** Prefer `localhost` and expose Igris through TLS or an authenticated tunnel. `network` makes the service reachable through every IPv4 interface and increases its attack surface. Use it only on owner-controlled or explicitly authorized networks, retain password authentication, restrict ingress with a firewall, and add only required addresses or hostnames to `IGIRIS_ALLOWED_HOSTS`.
+
+Verify localhost-only mode on a host with the test addresses `192.168.1.13` and `192.168.1.16`:
+
+```bash
+sudo ss -tlnp '( sport = :8787 )'
+curl --noproxy '*' --fail http://127.0.0.1:8787/api/health
+curl --noproxy '*' --connect-timeout 3 http://192.168.1.13:8787/api/health
+curl --noproxy '*' --connect-timeout 3 http://192.168.1.16:8787/api/health
+```
+
+Expected result: `ss` shows `127.0.0.1:8787`, the loopback request succeeds, and both `192.168.1.x` requests are refused or time out.
+
+For network mode, set `IGIRIS_BIND_MODE=network`, include both test addresses in `IGIRIS_ALLOWED_HOSTS`, restart Igris, and repeat:
+
+```bash
+sudo ss -tlnp '( sport = :8787 )'
+curl --noproxy '*' --fail http://192.168.1.13:8787/api/health
+curl --noproxy '*' --fail http://192.168.1.16:8787/api/health
+```
+
+Expected result: `ss` shows `0.0.0.0:8787` and both requests succeed when the firewall permits them.
 
 ### Change the unlock password
 

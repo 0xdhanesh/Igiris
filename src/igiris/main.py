@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import sys
 from contextlib import asynccontextmanager
 import uvicorn
 from .api import create_app
@@ -40,6 +41,9 @@ def build_app(settings:Settings|None=None):
     return app
 
 def run():
-    settings=Settings(); uvicorn.run(build_app(settings),host=settings.bind_host,port=settings.bind_port)
+    settings = Settings()
+    host = settings.resolved_bind_host
+    print(f"Starting Igris on {host}:{settings.bind_port}", file=sys.stderr, flush=True)
+    uvicorn.run(build_app(settings), host=host, port=settings.bind_port)
 
 app=build_app()
