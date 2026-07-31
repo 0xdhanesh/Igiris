@@ -36,9 +36,14 @@ else
   chmod 0600 "$PASSWORD_FILE"
   printf 'Existing Igris password verifier retained.\n'
 fi
-install -m 0644 "$ROOT/packaging/igiris.env" /etc/igiris/igiris.env
+if [[ -e /etc/igiris/igiris.env ]]; then
+  printf 'Existing Igris environment configuration retained.\n'
+else
+  install -m 0644 "$ROOT/packaging/igiris.env" /etc/igiris/igiris.env
+fi
 install -m 0644 "$ROOT/packaging/igiris.service" /etc/systemd/system/igiris.service
 systemctl daemon-reload
 systemctl enable igiris
 systemctl restart igiris
-printf 'Igris installed. Open http://127.0.0.1:8787 and enter your password.\n'
+printf 'Igris installed. Check /etc/igiris/igiris.env for the active bind configuration.\n'
+printf 'For authorized LAN access, set IGIRIS_BIND_MODE=network, update IGIRIS_ALLOWED_HOSTS, and restart the service.\n'

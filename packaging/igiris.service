@@ -7,6 +7,7 @@ After=network.target
 Type=simple
 User=root
 Group=root
+Environment=IGIRIS_BIND_MODE=localhost
 EnvironmentFile=-/etc/igiris/igiris.env
 ExecStart=/opt/igiris/.venv/bin/igirisd
 Restart=on-failure
