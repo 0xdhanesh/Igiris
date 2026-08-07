@@ -1,0 +1,86 @@
+name: Sync frontend static
+
+# Keeps committed src/igris/static identical to a fresh Vite build.
+# When assets drift, this workflow commits the sync to the same branch.
+#
+# Note: pushes made with GITHUB_TOKEN do not re-trigger workflows. CI still
+# packages a correct wheel by consuming the frontend build artifact (see ci.yml).
+
+on:
+  push:
+    paths:
+      - "frontend/**"
+      - "src/igris/static/**"
+      - "scripts/sync-frontend-static.sh"
+      - ".github/workflows/sync-frontend-static.yml"
+  pull_request:
+    paths:
+      - "frontend/**"
+      - "src/igris/static/**"
+      - "scripts/sync-frontend-static.sh"
+      - ".github/workflows/sync-frontend-static.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-frontend-static-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    name: Rebuild and commit static assets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # Fork PRs cannot receive pushes with the base repo token.
+    if: >-
+      github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        with:
+          # PR: tip of the head branch. Push/dispatch: the event ref.
+          ref: ${{ github.head_ref || github.ref_name }}
+          # Required so a later git push can authenticate with GITHUB_TOKEN.
+          persist-credentials: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build and sync packaged frontend
+        run: bash scripts/sync-frontend-static.sh
+
+      - name: Commit synchronized assets when needed
+        id: commit
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- src/igris/static \
+            && [ -z "$(git ls-files --others --exclude-standard -- src/igris/static)" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "src/igris/static already matches the build"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/igris/static
+          git commit -m "chore: sync packaged frontend static assets"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Push synchronized assets
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          # Pass via env (not ${{ }} inside run:) to avoid shell template injection.
+          TARGET_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          git push origin "HEAD:refs/heads/${TARGET_BRANCH}"
+          echo "Pushed synchronized src/igris/static to ${TARGET_BRANCH}"
