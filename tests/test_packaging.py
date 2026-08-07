@@ -32,6 +32,21 @@ def test_installer_preserves_existing_environment_configuration():
     assert "Existing Igris environment configuration retained." in installer
 
 
+def test_installer_detects_environment_and_offers_ebpf_packages():
+    installer = (ROOT / "packaging" / "install.sh").read_text()
+
+    assert "detect_environment()" in installer
+    assert "print_environment_summary" in installer
+    assert "ensure_ebpf_support" in installer
+    assert "ebpf_packages_for_platform" in installer
+    assert "check_kernel_ebpf" in installer
+    assert "check_bpf_jit" in installer
+    assert "python3-bpfcc" in installer
+    assert "python3-bcc" in installer
+    assert "Post-installation eBPF verification" in installer
+    assert "eBPF JIT" in installer
+
+
 def test_packaging_defaults_to_explicit_localhost_bind_mode():
     installer = (ROOT / "packaging" / "install.sh").read_text()
     environment = (ROOT / "packaging" / "igiris.env").read_text()
