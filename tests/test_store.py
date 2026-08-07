@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from igiris.models import Event, ProcessArtifact, ProcessNode
+from igris.models import Event, ProcessArtifact, ProcessNode
 
 
 def node(pid: int = 42, root_pid: int = 42) -> ProcessNode:

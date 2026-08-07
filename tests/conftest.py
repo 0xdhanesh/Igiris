@@ -2,13 +2,13 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from igiris.api import create_app
-from igiris.config import Settings
-from igiris.store import Store
+from igris.api import create_app
+from igris.config import Settings
+from igris.store import Store
 
 @pytest.fixture
 def store(tmp_path: Path) -> Store:
-    db = Store(tmp_path / "igiris.db")
+    db = Store(tmp_path / "igris.db")
     db.initialize()
     yield db
     db.close()

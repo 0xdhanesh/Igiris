@@ -77,8 +77,8 @@ test -e /sys/kernel/kheaders.tar.xz \
 The service privilege can be checked independently of the current shell:
 
 ```bash
-sudo systemctl show igiris -p User -p Group -p DynamicUser
-sudo systemctl status igiris --no-pager
+sudo systemctl show igris -p User -p Group -p DynamicUser
+sudo systemctl status igris --no-pager
 ```
 
 The packaged service is expected to run as root because loading eBPF programs
@@ -149,8 +149,8 @@ After booting the kernel with matching headers:
 ```bash
 cd /home/kali/Desktop/Igris
 sudo bash packaging/install.sh
-sudo systemctl restart igiris
-sudo journalctl -u igiris -n 100 --no-pager
+sudo systemctl restart igris
+sudo journalctl -u igris -n 100 --no-pager
 ```
 
 The installer creates a virtual environment with `--system-site-packages`, which
@@ -159,7 +159,7 @@ different method, verify the exact service interpreter instead of assuming that
 a successful system Python import is sufficient:
 
 ```bash
-sudo /opt/igiris/.venv/bin/python -c 'import bcc; print(bcc.__file__)'
+sudo /opt/igris/.venv/bin/python -c 'import bcc; print(bcc.__file__)'
 ```
 
 Never put a sudo password in this file, a command line, shell history, a service
@@ -176,7 +176,7 @@ Also inspect the journal for BCC compiler, verifier, permission, or tracepoint
 errors:
 
 ```bash
-sudo journalctl -u igiris -b --no-pager
+sudo journalctl -u igris -b --no-pager
 ```
 
 Generate a harmless local test event only on a host you are authorized to

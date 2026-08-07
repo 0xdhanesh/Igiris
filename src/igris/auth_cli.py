@@ -26,12 +26,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Set the local Igris unlock password")
     parser.add_argument(
         "--file",
-        default=os.environ.get("IGIRIS_PASSWORD_VERIFIER_FILE"),
+        default=os.environ.get("IGRIS_PASSWORD_VERIFIER_FILE"),
         help="Owner-only password verifier file",
     )
     args = parser.parse_args()
     if not args.file:
-        parser.error("--file or IGIRIS_PASSWORD_VERIFIER_FILE is required")
+        parser.error("--file or IGRIS_PASSWORD_VERIFIER_FILE is required")
     try:
         configure_password(args.file)
     except ValueError as exc:

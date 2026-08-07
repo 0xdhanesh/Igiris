@@ -9,7 +9,7 @@ Igris is a local-first Linux process and network investigation tool. It collects
 ## Repository layout
 
 ```text
-src/igiris/             Python package and runtime application
+src/igris/             Python package and runtime application
   api.py                FastAPI routes, auth middleware, static-file serving
   main.py               application lifecycle and collector selection
   collectors.py         /proc polling collector and enrichment helpers
@@ -28,7 +28,7 @@ version.txt             single release-version source of truth
 assets/                 project artwork and documentation assets
 ```
 
-`src/igiris/static` must exactly match `frontend/dist` before packaging. Never hand-edit generated assets. The installer rebuilds the frontend and synchronizes those directories.
+`src/igris/static` must exactly match `frontend/dist` before packaging. Never hand-edit generated assets. The installer rebuilds the frontend and synchronizes those directories.
 
 ## Development environment
 
@@ -43,28 +43,28 @@ npm ci
 cd ..
 ```
 
-The repository Python environment is for development. The production installer creates a separate `/opt/igiris/.venv` and does not reuse `.venv`.
+The repository Python environment is for development. The production installer creates a separate `/opt/igris/.venv` and does not reuse `.venv`.
 
 ## Running locally
 
 Run the backend from the repository environment:
 
 ```bash
-.venv/bin/igirisd
+.venv/bin/igrisd
 ```
 
-The default development settings come from `src/igiris/config.py` and environment variables prefixed with `IGIRIS_`. Do not commit passwords, database files, tokens, or local `.env` files. For a frontend-only development server:
+The default development settings come from `src/igris/config.py` and environment variables prefixed with `IGRIS_`. Do not commit passwords, database files, tokens, or local `.env` files. For a frontend-only development server:
 
 ```bash
 cd frontend
 npm run dev
 ```
 
-The browser UI is normally served by FastAPI from `src/igiris/static` after a production build.
+The browser UI is normally served by FastAPI from `src/igris/static` after a production build.
 
 ## Versioning
 
-Edit `version.txt` when changing the application version. Use a plain value such as `0.2.0`; the UI displays it as `v0.2.0`. The installer copies it to `/opt/igiris/version.txt`, the backend exposes it in `/api/health`, and the frontend displays the backend-reported value. Keep frontend and backend changes in one commit and rebuild the frontend before packaging.
+Edit `version.txt` when changing the application version. Use a plain value such as `0.2.0`; the UI displays it as `v0.2.0`. The installer copies it to `/opt/igris/version.txt`, the backend exposes it in `/api/health`, and the frontend displays the backend-reported value. Keep frontend and backend changes in one commit and rebuild the frontend before packaging.
 
 ## Architecture and implementation rules
 
@@ -82,7 +82,7 @@ Linux /proc and kernel events -> collector -> models -> SQLite Store -> FastAPI 
 - Treat PID reuse, process lifetime, permissions, and missing kernel support as real collection conditions.
 - When changing response shapes, update both backend tests and the React consumers.
 - Do not silently discard evidence to make a UI look cleaner; filter only at a documented presentation boundary.
-- Do not commit generated `frontend/node_modules` or `frontend/dist` output. The packaged `src/igiris/static` tree is synchronized by the build/install process.
+- Do not commit generated `frontend/node_modules` or `frontend/dist` output. The packaged `src/igris/static` tree is synchronized by the build/install process.
 
 ## Testing and local CI
 
@@ -103,7 +103,7 @@ python -m pytest -q
 python -m compileall -q src
 python -m pip check
 (cd frontend && npm ci && npm test && npm run build)
-diff -qr frontend/dist src/igiris/static
+diff -qr frontend/dist src/igris/static
 bash -n packaging/install.sh packaging/reinstall.sh
 ```
 
@@ -111,15 +111,15 @@ If a local environment has incompatible pytest warning plugins, use the project-
 
 ## Frontend build and deployment
 
-The production service uses `/opt/igiris`. To deploy the current repository while retaining that location:
+The production service uses `/opt/igris`. To deploy the current repository while retaining that location:
 
 ```bash
 sudo bash packaging/reinstall.sh
-sudo systemctl status igiris
-sudo journalctl -u igiris -n 100 --no-pager
+sudo systemctl status igris
+sudo journalctl -u igris -n 100 --no-pager
 ```
 
-`packaging/install.sh` compiles the frontend, synchronizes `frontend/dist` to `src/igiris/static`, copies `version.txt`, installs the package into `/opt/igiris`, installs the systemd unit/environment, and restarts the service. It requires npm. The service must run as root for system-wide BCC collection.
+`packaging/install.sh` compiles the frontend, synchronizes `frontend/dist` to `src/igris/static`, copies `version.txt`, installs the package into `/opt/igris`, installs the systemd unit/environment, and restarts the service. It requires npm. The service must run as root for system-wide BCC collection.
 
 After deployment, verify `/api/health`: full collection should report `mode: ebpf+bcc`, `visibility: full`, and `ebpf_available: true`. If it reports `proc-polling`, inspect the journal for privilege, BCC, headers, tracepoint, or compiler errors.
 
@@ -144,7 +144,7 @@ Before pushing, run `./tests/all.sh`, `./tests/security.sh`, inspect `git diff -
 8. Review the diff, secrets, permissions, version, and generated-file synchronization.
 9. Report what changed, what passed, and any environment-limited checks honestly.
 
-Do not run destructive commands against the repository, database, `/opt/igiris`, or system service unless the task explicitly authorizes it. Keep secrets out of logs and commits. For security-sensitive changes, run the security checks and explain any accepted finding.
+Do not run destructive commands against the repository, database, `/opt/igris`, or system service unless the task explicitly authorizes it. Keep secrets out of logs and commits. For security-sensitive changes, run the security checks and explain any accepted finding.
 
 ## Definition of done
 
@@ -154,7 +154,7 @@ A task is complete only when all applicable conditions are true:
 - Existing behavior and security boundaries remain intact.
 - Regression tests cover the new behavior and pass.
 - Python sources compile, dependencies pass `pip check`, and frontend output builds.
-- `frontend/dist` and `src/igiris/static` are identical when frontend code changed.
+- `frontend/dist` and `src/igris/static` are identical when frontend code changed.
 - Packaging scripts pass `bash -n` and the wheel can be installed/imported when packaging changed.
 - Version changes use `version.txt` and are visible through backend health/UI after rebuild.
 - Relevant CI/security scripts pass, or any blocked check is explicitly documented with its cause.
@@ -166,8 +166,8 @@ A task is complete only when all applicable conditions are true:
 `proc-polling` means the BCC collector was unavailable or failed initialization. Check:
 
 ```bash
-sudo journalctl -u igiris -n 100 --no-pager
-sudo /opt/igiris/.venv/bin/python -c 'import bcc; print(bcc.__file__)'
+sudo journalctl -u igris -n 100 --no-pager
+sudo /opt/igris/.venv/bin/python -c 'import bcc; print(bcc.__file__)'
 uname -r
 readlink -f "/lib/modules/$(uname -r)/build"
 ```

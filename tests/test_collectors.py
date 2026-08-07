@@ -3,10 +3,10 @@ from types import SimpleNamespace
 from datetime import datetime, timezone
 import socket
 
-from igiris.collectors import DomainCorrelator, PollingCollector, connection_to_event, detect_new_network_tools, dns_query_from_tool, historical_transitions, is_internal_api_connection, observed_domain_from_tool, persist_lineage
-from igiris.ebpf import BPF_PROGRAM, BccCollector
-from igiris.store import Store
-from igiris.processes import ProcessSnapshot
+from igris.collectors import DomainCorrelator, PollingCollector, connection_to_event, detect_new_network_tools, dns_query_from_tool, historical_transitions, is_internal_api_connection, observed_domain_from_tool, persist_lineage
+from igris.ebpf import BPF_PROGRAM, BccCollector
+from igris.store import Store
+from igris.processes import ProcessSnapshot
 
 
 @dataclass
@@ -88,7 +88,7 @@ def test_history_transition_records_reconnect_after_close():
     assert historical_transitions(set(), {key}) == {key}
 
 
-def test_inbound_and_local_outbound_igiris_api_sockets_are_not_collected_as_evidence():
+def test_inbound_and_local_outbound_igris_api_sockets_are_not_collected_as_evidence():
     inbound = Conn(socket.AF_INET, socket.SOCK_STREAM, Addr("192.168.1.23", 51000), "ESTABLISHED", 40, Addr("0.0.0.0", 8787))
     outbound_remote = Conn(socket.AF_INET, socket.SOCK_STREAM, Addr("203.0.113.8", 8787), "ESTABLISHED", 40, Addr("192.168.1.22", 51000))
     outbound_local = Conn(socket.AF_INET, socket.SOCK_STREAM, Addr("192.168.1.22", 8787), "ESTABLISHED", 40, Addr("192.168.1.22", 51000))

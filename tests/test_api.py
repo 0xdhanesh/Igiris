@@ -3,7 +3,7 @@ import io
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
-from igiris.models import Event, ProcessArtifact, ProcessNode
+from igris.models import Event, ProcessArtifact, ProcessNode
 from datetime import datetime, timezone
 
 
@@ -157,8 +157,8 @@ def test_all_api_responses_are_not_cacheable(client, store):
 
 def test_unhandled_api_errors_are_not_cacheable(store):
     from fastapi.testclient import TestClient
-    from igiris.api import create_app
-    from igiris.config import Settings
+    from igris.api import create_app
+    from igris.config import Settings
 
     app = create_app(Settings(database_path=str(store.path), static_dir="missing", collector_enabled=False, allowed_hosts="testserver"), store)
 
@@ -205,17 +205,17 @@ def test_revision_endpoint_changes_when_new_evidence_arrives(client, store):
 
 def test_api_rejects_untrusted_host(store):
     from fastapi.testclient import TestClient
-    from igiris.api import create_app
-    from igiris.config import Settings
+    from igris.api import create_app
+    from igris.config import Settings
     app = create_app(Settings(database_path=str(store.path), static_dir="missing", collector_enabled=False, allowed_hosts="127.0.0.1"), store)
     assert TestClient(app, base_url="http://attacker.test").get("/api/health").status_code == 400
 
 
 def test_password_login_session_logout_and_origin_protect_evidence(store):
     from fastapi.testclient import TestClient
-    from igiris.api import create_app
-    from igiris.auth import hash_password
-    from igiris.config import Settings
+    from igris.api import create_app
+    from igris.auth import hash_password
+    from igris.config import Settings
 
     app = create_app(
         Settings(
@@ -254,9 +254,9 @@ def test_password_login_session_logout_and_origin_protect_evidence(store):
 
 def test_non_ascii_bearer_credential_is_rejected_as_unauthorized(store):
     from fastapi.testclient import TestClient
-    from igiris.api import create_app
-    from igiris.auth import hash_password
-    from igiris.config import Settings
+    from igris.api import create_app
+    from igris.auth import hash_password
+    from igris.config import Settings
 
     app = create_app(Settings(database_path=str(store.path), static_dir="missing",
         collector_enabled=False, allowed_hosts="testserver",
@@ -270,9 +270,9 @@ def test_non_ascii_bearer_credential_is_rejected_as_unauthorized(store):
 
 def test_password_login_throttles_repeated_failures(store):
     from fastapi.testclient import TestClient
-    from igiris.api import create_app
-    from igiris.auth import hash_password
-    from igiris.config import Settings
+    from igris.api import create_app
+    from igris.auth import hash_password
+    from igris.config import Settings
 
     app = create_app(
         Settings(
@@ -297,8 +297,8 @@ def test_password_login_throttles_repeated_failures(store):
 
 def test_parallel_logins_bound_expensive_password_checks(store, monkeypatch):
     from fastapi.testclient import TestClient
-    from igiris.api import create_app
-    from igiris.config import Settings
+    from igris.api import create_app
+    from igris.config import Settings
 
     entered = 0
     entered_lock = threading.Lock()
@@ -311,7 +311,7 @@ def test_parallel_logins_bound_expensive_password_checks(store, monkeypatch):
         release.wait(timeout=2)
         return False
 
-    monkeypatch.setattr("igiris.api.verify_password", slow_verify)
+    monkeypatch.setattr("igris.api.verify_password", slow_verify)
     app = create_app(Settings(database_path=str(store.path), static_dir="missing",
         collector_enabled=False, allowed_hosts="testserver", password_verifier="configured",
         login_max_failures=10, login_failure_window_seconds=60, login_max_parallel_checks=2), store)

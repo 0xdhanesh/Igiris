@@ -483,33 +483,33 @@ fi
 printf 'Compiling the latest frontend bundle...\n'
 npm --prefix "$ROOT/frontend" ci
 npm --prefix "$ROOT/frontend" run build
-rm -rf "$ROOT/src/igiris/static"
-install -d -m 0755 "$ROOT/src/igiris/static"
-cp -a "$ROOT/frontend/dist/." "$ROOT/src/igiris/static/"
-install -d -m 0755 /opt/igiris /etc/igiris
-install -m 0644 "$ROOT/version.txt" /opt/igiris/version.txt
-if systemctl is-active --quiet igiris; then
-  printf 'Stopping running Igris service before updating /opt/igiris.\n'
-  systemctl stop igiris
+rm -rf "$ROOT/src/igris/static"
+install -d -m 0755 "$ROOT/src/igris/static"
+cp -a "$ROOT/frontend/dist/." "$ROOT/src/igris/static/"
+install -d -m 0755 /opt/igris /etc/igris
+install -m 0644 "$ROOT/version.txt" /opt/igris/version.txt
+if systemctl is-active --quiet igris; then
+  printf 'Stopping running Igris service before updating /opt/igris.\n'
+  systemctl stop igris
 fi
-PASSWORD_FILE=/etc/igiris/password.verifier
-python3 -m venv --system-site-packages /opt/igiris/.venv
-/opt/igiris/.venv/bin/pip install "$ROOT"
+PASSWORD_FILE=/etc/igris/password.verifier
+python3 -m venv --system-site-packages /opt/igris/.venv
+/opt/igris/.venv/bin/pip install "$ROOT"
 if [[ ! -s "$PASSWORD_FILE" ]]; then
   printf 'Create the local Igris unlock password (minimum 12 characters).\n'
-  /opt/igiris/.venv/bin/igiris-set-password --file "$PASSWORD_FILE"
+  /opt/igris/.venv/bin/igris-set-password --file "$PASSWORD_FILE"
 else
   chmod 0600 "$PASSWORD_FILE"
   printf 'Existing Igris password verifier retained.\n'
 fi
-if [[ -e /etc/igiris/igiris.env ]]; then
+if [[ -e /etc/igris/igris.env ]]; then
   printf 'Existing Igris environment configuration retained.\n'
 else
-  install -m 0644 "$ROOT/packaging/igiris.env" /etc/igiris/igiris.env
+  install -m 0644 "$ROOT/packaging/igris.env" /etc/igris/igris.env
 fi
-install -m 0644 "$ROOT/packaging/igiris.service" /etc/systemd/system/igiris.service
+install -m 0644 "$ROOT/packaging/igris.service" /etc/systemd/system/igris.service
 systemctl daemon-reload
-systemctl enable igiris
-systemctl restart igiris
-printf 'Igris installed. Check /etc/igiris/igiris.env for the active bind configuration.\n'
-printf 'For authorized LAN access, set IGIRIS_BIND_MODE=network, update IGIRIS_ALLOWED_HOSTS, and restart the service.\n'
+systemctl enable igris
+systemctl restart igris
+printf 'Igris installed. Check /etc/igris/igris.env for the active bind configuration.\n'
+printf 'For authorized LAN access, set IGRIS_BIND_MODE=network, update IGRIS_ALLOWED_HOSTS, and restart the service.\n'
