@@ -6,6 +6,8 @@ This document is the working guide for human contributors and AI agents. It desc
 
 Igris is a local-first Linux process and network investigation tool. It collects process lineage, executable metadata, network events, and advanced artifacts into SQLite, exposes them through a FastAPI API, and renders a React/Vite investigation UI. Use it only on systems and networks you own or are explicitly authorized to monitor.
 
+**AI agents:** start with [`AGENTS.md`](./AGENTS.md) for the agent contract and the future-goals roadmap, then use this file for setup, architecture rules, verification, and definition of done. Default development branch for roadmap work is **`dev`**.
+
 ## Repository layout
 
 ```text
@@ -35,7 +37,7 @@ assets/                 project artwork and documentation assets
 Requirements: Linux, Python 3.11 or newer, Node.js/npm for frontend work, and Git. Root privileges and BCC/kernel headers are required only for full live eBPF collection, not for ordinary unit tests.
 
 ```bash
-cd /home/kali/Desktop/Igris
+# From the repository root
 python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[dev]'
 cd frontend
@@ -160,6 +162,30 @@ A task is complete only when all applicable conditions are true:
 - Relevant CI/security scripts pass, or any blocked check is explicitly documented with its cause.
 - `git diff --check` is clean and no unintended generated files, secrets, databases, or caches are included.
 - The final handoff names changed files, verification performed, deployment implications, and any remaining limitation.
+
+## Future goals (roadmap)
+
+These are product goals for continued development on **`dev`**. Full agent-oriented
+acceptance criteria live in [`AGENTS.md`](./AGENTS.md). Implement incrementally;
+do not drop existing investigation features to ship a goal.
+
+| # | Goal | Summary | Current foundation |
+|---|------|---------|--------------------|
+| 1 | Baseline delta store + fast “new only” views | After baseline, persist snapshot state in SQLite and serve **new** activity efficiently; keep full history/features available | Timestamp baseline via `preferences.baseline_ts` and `baseline_only` filters; large `list_events`/`list_parents` scans |
+| 2 | Desktop notifications | Notify on the host desktop when post-baseline network change is observed | No notifier; revision/highlight UI only |
+| 3 | Short-lived activity monitoring | Capture short-lived process/network activity reliably when eBPF is available; honest limited mode otherwise | `BccCollector` + polling fallback; known poll gaps |
+| 4 | SAFE marking | User marks known entities SAFE; matching activity stays stored but is not prompted/notified as “new” | No SAFE entity table or API |
+| 5 | Domain recon | On-demand, cached recon/info-gathering for **observed** domains | Tool-arg domains, optional PTR; no RDAP/DNS cache panel |
+
+### Implementation notes for roadmap work
+
+1. **Goal 1** should reduce time-to-load for baseline/new views without deleting pre-baseline rows. Prefer indexed delta queries and high-water marks over loading entire history into the UI.
+2. **Goal 2** must be local-only, rate-limited, and a no-op when no desktop notification bus is present. It must honor SAFE (goal 4).
+3. **Goal 3** must not claim full coverage under `proc-polling`. Improve capture paths; keep health/visibility messaging accurate.
+4. **Goal 4** is operator trust, not a security proof. SAFE activity remains queryable in “all activity” style views.
+5. **Goal 5** is investigation enrichment for observed domains, not an offensive scanner. Cache results; mark as enriched; rate-limit; opt-in where network egress is sensitive.
+
+When a roadmap goal ships, update `AGENTS.md` (mark status), this section, and `README.md` features/API tables as needed.
 
 ## Troubleshooting quick reference
 

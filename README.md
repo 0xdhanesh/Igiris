@@ -80,6 +80,7 @@ Igris/
 ├── tests/                # pytest + shell CI helpers
 ├── assets/               # Artwork for docs
 ├── version.txt           # Release version source of truth
+├── AGENTS.md             # AI agent contract + future goals roadmap
 ├── INSTRUCTIONS.md       # eBPF recovery (e.g. Kali ARM64)
 ├── DEVELOPMENT_INSTRUCTIONS.md
 └── SECURITY_SCANNING.md
@@ -89,6 +90,7 @@ Igris/
 
 | Goal | Open |
 |---|---|
+| AI agent instructions + roadmap | `AGENTS.md` |
 | App lifecycle | `src/igris/main.py` |
 | HTTP API surface | `src/igris/api.py` |
 | Settings / env vars | `src/igris/config.py` · `packaging/igris.env` |
@@ -97,6 +99,16 @@ Igris/
 | DB schema | `src/igris/store.py` |
 | Production install | `packaging/install.sh` · `packaging/igris.service` |
 | UI entry | `frontend/src/main.jsx` |
+
+### Future goals (summary)
+
+Roadmap work is tracked for the **`dev`** branch. Details and acceptance criteria: [`AGENTS.md`](./AGENTS.md).
+
+1. **Faster baseline/new views** — store baseline snapshot state in SQLite; load/show primarily what is new without removing full investigation features  
+2. **Desktop notifications** — alert on post-baseline network changes (local OS notifications; rate-limited)  
+3. **Short-lived monitoring** — keep/improve capture of brief process and network activity (eBPF-first)  
+4. **SAFE marks** — operator marks known entries SAFE so matching activity is not prompted/notified  
+5. **Domain recon** — on-demand, cached info-gathering for observed domains
 
 ### Quick commands
 
@@ -336,6 +348,7 @@ tests/python.sh && tests/frontend.sh && tests/package.sh
 # optional: tests/security.sh
 ```
 
+AI agents: [`AGENTS.md`](./AGENTS.md).  
 Contributor contract: [`DEVELOPMENT_INSTRUCTIONS.md`](./DEVELOPMENT_INSTRUCTIONS.md).  
 Security scanning notes: [`SECURITY_SCANNING.md`](./SECURITY_SCANNING.md).
 
