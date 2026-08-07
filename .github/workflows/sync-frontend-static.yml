@@ -8,14 +8,12 @@ name: Sync frontend static
 
 on:
   push:
-    branches: [main, dev]
     paths:
       - "frontend/**"
       - "src/igris/static/**"
       - "scripts/sync-frontend-static.sh"
       - ".github/workflows/sync-frontend-static.yml"
   pull_request:
-    branches: [main, dev]
     paths:
       - "frontend/**"
       - "src/igris/static/**"
