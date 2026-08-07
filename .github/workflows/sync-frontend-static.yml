@@ -77,8 +77,10 @@ jobs:
 
       - name: Push synchronized assets
         if: steps.commit.outputs.changed == 'true'
+        env:
+          # Pass via env (not ${{ }} inside run:) to avoid shell template injection.
+          TARGET_BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
           set -euo pipefail
-          branch="${{ github.head_ref || github.ref_name }}"
-          git push origin "HEAD:${branch}"
-          echo "Pushed synchronized src/igris/static to ${branch}"
+          git push origin "HEAD:refs/heads/${TARGET_BRANCH}"
+          echo "Pushed synchronized src/igris/static to ${TARGET_BRANCH}"
