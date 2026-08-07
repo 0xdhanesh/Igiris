@@ -1,349 +1,363 @@
-# Igris - Blood-Red Commander
+# Igris — Blood-Red Commander
 
 <p align="center">
-  <img src="./assets/igiris_0xdhanesh.png" alt="Shadow-Army-Igris" width="75%">
+  <img src="./assets/igiris_0xdhanesh.png" alt="Igris investigation monitor" width="75%">
 </p>
 
-**Local-first Linux process and network evidence for defenders, incident responders, and authorized security testers.**
+> **One-line:** Local-first Linux process + network investigation monitor. Collects evidence on-host, stores it in SQLite, serves a password-protected web UI and API. No cloud required.
 
-Igris helps answer a deceptively difficult host-investigation question:
-
-> Which process communicated, what executable launched it, what was loaded into that process, where did it connect, and what evidence supports the conclusion?
-
-Linux exposes much of this information, but it is fragmented across process metadata, socket state, executable mappings, command lines, and short-lived kernel events. Igris collects that evidence into a single investigation timeline without requiring a cloud telemetry service.
-
-Igris is an investigation and evidence tool. It does not automatically block traffic, declare a process malicious, or claim that every shared library mapped into a network-active process caused the connection.
-
-## Who Igris is for
-
-### Blue Teams and incident responders
-
-Use Igris to:
-
-- identify the exact process and executable associated with observed network activity;
-- follow parent/child lineage from an application to a network-active helper process;
-- review command lines, users, executable hashes, mapped libraries, and open files;
-- investigate software launched from unusual writable locations;
-- preserve recent process/network evidence for triage and incident reconstruction;
-- compare activity against an analyst-defined baseline;
-- export JSON or CSV evidence for case notes and downstream analysis.
-
-Typical investigations include browser helper processes, unexpected background services, command-line download tools, suspicious child processes, and applications communicating with destinations not explained by normal use.
-
-### Red Teams and authorized security testers
-
-Use Igris in systems you own or are explicitly authorized to assess to:
-
-- validate whether test payloads produce expected process and network telemetry;
-- understand which stage of a controlled execution chain initiates a connection;
-- measure visibility gaps caused by process lifetime, privilege, or collection mode;
-- compare operator activity with the evidence available to a defender;
-- test detections for unusual executable paths, process lineage, and destination changes;
-- document observable artifacts during adversary-emulation exercises.
-
-Igris is not intended for covert monitoring, unauthorized access, credential theft, or deployment outside an approved security scope.
-
-## What Igris records today
-
-Igris currently provides:
-
-- process snapshots with PID, parent PID, root application, user, executable path, command line, and first/last-seen times;
-- SHA-256 enrichment for readable executables;
-- process trees grouped under an investigation root;
-- live socket observations and retained connection history;
-- remote address, port, protocol, address family, and available domain evidence;
-- mapped shared-library paths from `/proc/<pid>/maps`;
-- open-file paths from `/proc/<pid>/fd`;
-- indicators for executables launched from writable or unusual paths;
-- process-scoped and application-scoped timelines;
-- search across process, artifact, hash, destination, and event fields;
-- analyst baselines, evidence reset, retention, and JSON/CSV export;
-- a password-protected local web interface with expiring in-memory sessions;
-- automatic fallback to `/proc` polling when kernel event collection is unavailable.
-
-Collection fidelity is always shown in the health response and interface. Running without the required privilege or kernel support reduces visibility rather than silently presenting partial data as complete.
-
-## Evidence semantics
-
-Igris separates evidence types so analysts can judge what a record proves.
-
-| Classification | Meaning |
+| | |
 |---|---|
-| **Observed** | Directly captured from the kernel or a live Linux interface, such as a process, socket, syscall result, or mapped file. |
-| **Correlated** | Two observations belonged to the same process generation or application lineage during an overlapping time window. |
-| **Enriched** | Derived from observed data, such as a SHA-256 digest or parsed executable metadata. |
-| **Heuristic** | A useful lead that is not proof, such as an executable residing under a commonly writable path. |
+| **Version** | 1.2.0 (`version.txt`) |
+| **Platform** | Linux (collector); Python 3.11+ |
+| **Stack** | FastAPI · uvicorn · psutil · Pydantic · SQLite · React/Vite · optional BCC/eBPF |
+| **Entry points** | `igirisd` (daemon) · `igiris-set-password` · `packaging/install.sh` |
+| **Default UI** | `http://127.0.0.1:8787` (loopback only) |
+| **Not** | Firewall, EDR, SIEM, packet capture, malware verdict engine |
 
-A library shown under a process means that it was mapped when Igris inspected that process. It does **not** by itself prove that the library selected a destination or initiated a connection.
+**Core question this project answers**
 
-As of v1.2, Igris now performs **user-space stack tracing** on `sys_enter_connect` using `bpf_get_stackid(BPF_F_USER_STACK)`. The top user-space frame is resolved to the responsible library and instruction offset. This data appears in `raw_meta.call_site` on connect events. The previous temporal library correlation remains as a fallback. This significantly improves visibility for reverse engineers and malware analysts.
+> Which process communicated, what launched it, what was loaded into it, where did it connect, and what evidence supports that?
 
-## Architecture
+---
+
+## For AI assistants (and busy humans)
+
+If you are summarizing or navigating this repository, start here.
+
+### What this project is
+
+Igris is an **investigation and evidence** tool for a single Linux host. It watches processes and network activity, groups them under application roots, and presents a timeline in a local web app. It **does not** block traffic, decrypt TLS, or auto-label malware.
+
+### Important features (highlight these)
+
+| Feature | What it does |
+|---|---|
+| Process snapshots | PID, PPID, user, exe path, cmdline, first/last seen |
+| Investigation roots | Walk parents until systemd/init/sshd/desktop shells; group evidence under a root |
+| Live + historical network | Current sockets and retained connect transitions |
+| Domain context | DNS tool queries, curl/wget/ping host args; optional PTR |
+| Executable hashing | SHA-256 of readable binaries |
+| Libraries & open files | From `/proc` maps/fds, or eBPF open events in full mode |
+| Call-site stacks (v1.2) | User-space stacks on `connect`/`execve` via BCC when eBPF is available |
+| Odd-path heuristics | Flag exes under `/tmp`, `/var/tmp`, `/dev/shm`, `/run/user` |
+| Dual collection modes | Full: eBPF+BCC · Fallback: `/proc` polling (status always shown) |
+| Local auth | scrypt password verifier; in-memory Bearer sessions |
+| Evidence store | SQLite WAL, retention hours, soft disk cap |
+| Export | JSON + CSV |
+| Baseline | Mark “now” and focus on activity after |
+| Hardened package install | systemd unit, localhost bind default, installer eBPF package prompts |
+
+### How data flows
 
 ```text
-Linux process/socket/kernel evidence
-                │
-                ▼
-      Collector and enrichment
-      ├─ process lineage
-      ├─ executable hashing
-      ├─ mapped images/open files
-      ├─ socket and connect evidence
-      └─ DNS/domain evidence when available
-                │
-                ▼
-        SQLite evidence store
-                │
-                ▼
-       FastAPI local API and UI
-      ├─ investigation roots
-      ├─ process timelines
-      ├─ advanced evidence
-      ├─ baseline and retention
-      └─ JSON/CSV export
+Linux /proc + sockets (+ optional BCC eBPF)
+        → Collector (PollingCollector | BccCollector)
+        → Models (Event, ProcessNode, ProcessArtifact)
+        → Store (SQLite)
+        → FastAPI (/api/* + static React UI)
 ```
 
-The backend is Python 3.11+, FastAPI, psutil, Pydantic, and SQLite. The interface is built with React and Vite. Linux-specific acquisition is kept behind collector boundaries so the evidence model can evolve independently.
+### Repository map (what lives where)
 
-## Collection modes
+```text
+Igris/
+├── src/igiris/           # Python package = the application
+│   ├── main.py           # Startup, collector choice, uvicorn
+│   ├── config.py         # IGIRIS_* settings
+│   ├── collectors.py     # /proc polling + enrichment
+│   ├── ebpf.py           # BCC eBPF program + stack resolution
+│   ├── processes.py      # Snapshots, roots, hashes, maps/fds
+│   ├── models.py         # Evidence types
+│   ├── store.py          # SQLite schema + queries
+│   ├── api.py            # Routes, auth middleware, SPA
+│   ├── auth.py           # scrypt + sessions
+│   ├── auth_cli.py       # igiris-set-password
+│   └── static/           # Built UI (from frontend/dist)
+├── frontend/             # React/Vite source + node tests
+│   └── src/              # UI modules (auth, dashboard, timeline, …)
+├── packaging/            # install.sh, systemd unit, igiris.env
+├── tests/                # pytest + shell CI helpers
+├── assets/               # Artwork for docs
+├── version.txt           # Release version source of truth
+├── INSTRUCTIONS.md       # eBPF recovery (e.g. Kali ARM64)
+├── DEVELOPMENT_INSTRUCTIONS.md
+└── SECURITY_SCANNING.md
+```
 
-### `/proc` polling
+### Key files to open first
 
-The portable fallback inspects Linux process, mapping, file-descriptor, and socket state at a configurable interval. It supports useful host investigation without a native build chain, but a process or connection that starts and exits between observations can be missed.
+| Goal | Open |
+|---|---|
+| App lifecycle | `src/igiris/main.py` |
+| HTTP API surface | `src/igiris/api.py` |
+| Settings / env vars | `src/igiris/config.py` · `packaging/igiris.env` |
+| Polling collector | `src/igiris/collectors.py` |
+| eBPF collector | `src/igiris/ebpf.py` |
+| DB schema | `src/igiris/store.py` |
+| Production install | `packaging/install.sh` · `packaging/igiris.service` |
+| UI entry | `frontend/src/main.jsx` |
 
-### Kernel event collection
+### Quick commands
 
-The current code can use an optional BCC path where supported. Kernel event collection requires elevated privilege and compatible kernel tooling. When it cannot initialize, Igris reports reduced visibility and continues with polling.
+```bash
+# Install on a Linux host (review script first)
+sudo bash packaging/install.sh
 
-A libbpf CO-RE collector is planned to replace runtime-compiled BCC as the primary event-driven path. See [Roadmap](#roadmap).
+# Dev backend
+python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
+.venv/bin/igirisd
 
-## Installation
+# Tests
+.venv/bin/pytest -q
+cd frontend && npm ci && npm test && npm run build
+tests/all.sh
+```
+
+---
+
+## Who uses it
+
+| Audience | Typical use |
+|---|---|
+| **Blue team / IR** | Attribute connections to process + exe; lineage; exports for cases |
+| **Red team / authorized testers** | Validate payload telemetry; measure visibility gaps |
+| **Reverse engineers / malware analysts** | Libraries, open files, eBPF call-site stacks on connect |
+| **Not for** | Covert unauthorized monitoring; fleet SIEM; automated blocking |
+
+**Responsible use:** only on systems/networks you own or are explicitly authorized to monitor.
+
+---
+
+## Architecture (backend)
+
+### Runtime components
+
+| Component | Responsibility |
+|---|---|
+| **`igirisd`** | Loads settings, opens DB, starts collector task, serves FastAPI |
+| **Collector** | Continuously gathers host evidence |
+| **Store** | Persists processes, events, artifacts; retention/cleanup |
+| **API + auth** | Password login, Bearer sessions, investigation endpoints |
+| **Static UI** | Built React app served from the same process |
+
+### Collector selection (`main.py`)
+
+1. Check BCC readiness: **root**, importable `bcc`, matching kernel headers (`/lib/modules/$(uname -r)/build` or kheaders).
+2. If ready → `BccCollector` (eBPF + still enriches via `/proc`).
+3. Else → `PollingCollector` only.
+4. If eBPF init fails at runtime → automatic fall back to polling; status messages updated.
+
+**Health signals:** `/api/health` reports `mode` (`ebpf+bcc` | `proc-polling`), `visibility` (`full` | `limited`), `ebpf_available`, and diagnostic `messages`. Never treat limited mode as complete coverage.
+
+### Collection modes
+
+| Mode | Requirements | Captures well | Misses |
+|---|---|---|---|
+| **eBPF + BCC** | root, BCC, matching headers, kernel BPF | Short-lived connect/exec/open; user stacks | Needs packages; may need reboot after newer headers |
+| **`/proc` polling** | Linux + privilege for broad visibility | Steady-state processes and sockets | Activity between poll intervals |
+
+Installer (`packaging/install.sh`) detects distro/board, probes eBPF/JIT, can prompt to install packages (`apt`/`dnf`/`yum`/`zypper`/`pacman`), then re-verifies. Deep Kali/ARM recovery: [`INSTRUCTIONS.md`](./INSTRUCTIONS.md).
+
+### Evidence types (`models.py`)
+
+| Type | Meaning |
+|---|---|
+| **Observed** | Direct from kernel or live `/proc`/socket interfaces |
+| **Correlated** | Same process/lineage in an overlapping window |
+| **Enriched** | Derived (hash, tool-arg hostname, optional PTR) |
+| **Heuristic** | Lead only (e.g. odd writable path) |
+
+Mapped libraries ≠ proven connect call-site. Stack frames in `raw_meta` (eBPF mode) strengthen attribution but still need human judgment.
+
+### SQLite tables (`store.py`)
+
+- `processes` — nodes by PID  
+- `events` — connect, dns, icmp, exec_network_tool, live_socket  
+- `process_artifacts` — library/file paths + source  
+- `preferences` — baseline timestamp, etc.  
+
+DB parent dir mode `0700`, files `0600`.
+
+### API surface (`api.py`)
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/api/auth/login` | Password → Bearer token |
+| `POST` | `/api/auth/logout` | Revoke session |
+| `GET` | `/api/health` | Version + collector status |
+| `GET` | `/api/revision` | UI change detection |
+| `GET` | `/api/parents` | Application roots |
+| `GET` | `/api/parents/{root_pid}` | Tree + events for a root |
+| `GET` | `/api/events` | Filtered event list |
+| `GET` | `/api/parents/{root_pid}/processes/{pid}/advanced` | Libraries, files, stacks, network |
+| `POST`/`DELETE` | `/api/baseline` | Set/clear baseline |
+| `DELETE` | `/api/evidence` | Clear store + collector tracking |
+| `GET` | `/api/export.json` · `/api/export.csv` | Export |
+
+Interactive docs: `/docs` when running. Auth required for API when a password verifier is configured.
+
+### Frontend (`frontend/`)
+
+React + Vite. Modules: auth, dashboard, timeline, revision polling, refresh highlights. Production build lands in `src/igiris/static` (installer rebuilds and syncs; do not hand-edit generated assets).
+
+---
+
+## Get it working
 
 ### Requirements
 
-- Linux;
-- Python 3.11 or newer;
-- root privileges for complete host telemetry and system service installation;
-- Node.js/npm only when rebuilding the frontend;
-- kernel BPF/BTF support for the planned native event collector.
+- Linux host for real collection  
+- Python **3.11+**  
+- **Root** for system install and full telemetry  
+- Node/npm only to rebuild the UI  
+- Full mode: BCC packages + matching **kernel headers**  
 
-### System installation
-
-Review the installer and service policy before running them on a monitored host:
+### Production install
 
 ```bash
+# Read packaging/install.sh first
 sudo bash packaging/install.sh
-```
-
-The installer:
-
-- creates an isolated environment under `/opt/igiris`;
-- prompts for a local unlock password with terminal echo disabled;
-- stores only a salted scrypt verifier in `/etc/igiris/password.verifier` with owner-only permissions;
-- installs the hardened systemd unit;
-- binds the service to loopback by default;
-- starts or restarts the service.
-
-Check service health with:
-
-```bash
 sudo systemctl status igiris
-sudo journalctl -u igiris -f
+curl --noproxy '*' http://127.0.0.1:8787/api/health
 ```
 
-Open the interface using the address configured in `/etc/igiris/igiris.env`. The default configuration is local-only.
+What the installer does:
 
-### Choose the bind interface
+1. Detect environment (OS, arch, distro, Raspberry Pi, package manager)  
+2. Check eBPF / JIT / headers / BCC; optionally install packages  
+3. `npm ci` + build frontend → copy into package static  
+4. Install under `/opt/igiris` with venv (`--system-site-packages` for distro BCC)  
+5. Create unlock password → `/etc/igiris/password.verifier`  
+6. Install `/etc/igiris/igiris.env` + systemd unit; enable & restart  
 
-Igris supports two explicit bind modes in `/etc/igiris/igiris.env`:
-
-```ini
-# Secure default: listen only on this host.
-IGIRIS_BIND_MODE=localhost
-
-# Authorized LAN access: listen on every IPv4 interface.
-# IGIRIS_BIND_MODE=network
-```
-
-`localhost` resolves to `127.0.0.1`; `network` resolves to `0.0.0.0`. After changing the mode, restart the service:
+Config file: `/etc/igiris/igiris.env`  
+Logs: `sudo journalctl -u igiris -f`  
+Password change:
 
 ```bash
-sudo systemctl restart igiris
-sudo journalctl -u igiris -n 25 --no-pager
-```
-
-An existing explicit `IGIRIS_BIND_HOST` setting remains supported and takes precedence over `IGIRIS_BIND_MODE`. Remove that legacy override to use mode selection. An invalid mode emits a warning and falls back to localhost-only binding.
-
-**Security:** Prefer `localhost` and expose Igris through TLS or an authenticated tunnel. `network` makes the service reachable through every IPv4 interface and increases its attack surface. Use it only on owner-controlled or explicitly authorized networks, retain password authentication, restrict ingress with a firewall, and add only required addresses or hostnames to `IGIRIS_ALLOWED_HOSTS`.
-
-Verify localhost-only mode on a host with the test addresses `192.168.1.13` and `192.168.1.16`:
-
-```bash
-sudo ss -tlnp '( sport = :8787 )'
-curl --noproxy '*' --fail http://127.0.0.1:8787/api/health
-curl --noproxy '*' --connect-timeout 3 http://192.168.1.13:8787/api/health
-curl --noproxy '*' --connect-timeout 3 http://192.168.1.16:8787/api/health
-```
-
-Expected result: `ss` shows `127.0.0.1:8787`, the loopback request succeeds, and both `192.168.1.x` requests are refused or time out.
-
-For network mode, set `IGIRIS_BIND_MODE=network`, include both test addresses in `IGIRIS_ALLOWED_HOSTS`, restart Igris, and repeat:
-
-```bash
-sudo ss -tlnp '( sport = :8787 )'
-curl --noproxy '*' --fail http://192.168.1.13:8787/api/health
-curl --noproxy '*' --fail http://192.168.1.16:8787/api/health
-```
-
-Expected result: `ss` shows `0.0.0.0:8787` and both requests succeed when the firewall permits them.
-
-### Change the unlock password
-
-```bash
-sudo /opt/igiris/.venv/bin/igiris-set-password \
-  --file /etc/igiris/password.verifier
+sudo /opt/igiris/.venv/bin/igiris-set-password --file /etc/igiris/password.verifier
 sudo systemctl restart igiris
 ```
 
-The password is read interactively and is not placed in shell history. Restarting also invalidates every in-memory browser session.
-
-## Development
-
-Create an environment and install the backend:
+### Development run
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e '.[dev]'
-```
-
-Run backend tests:
-
-```bash
-.venv/bin/pytest -q
-```
-
-Install, test, and build the frontend:
-
-```bash
-cd frontend
-npm ci
-npm test
-npm run build
-```
-
-Run the packaged application from the repository environment:
-
-```bash
+cd frontend && npm ci && npm run build && cd ..
 .venv/bin/igirisd
 ```
 
-For collection testing, use only hosts, applications, and networks within your authorized scope.
+Dev DB default: `~/.local/share/igiris/igiris.db` (override with `IGIRIS_DATABASE_PATH`). Full eBPF collection still needs root + BCC on Linux.
 
-## Investigation workflow
+### Investigation workflow (operator)
 
-1. **Confirm visibility.** Check whether Igris reports full kernel-assisted collection or limited polling.
-2. **Select an application root.** Review its user, executable, activity counts, and destinations.
-3. **Follow the process tree.** Identify the exact child process associated with the evidence.
-4. **Inspect Advanced Mode.** Review invocation, executable digest, mapped libraries, open files, and process-scoped network events.
-5. **Evaluate evidence strength.** Distinguish direct observations from correlation and heuristics.
-6. **Set a baseline.** Keep the current evidence visible while focusing on strictly newer activity.
-7. **Export or clear.** Export case evidence, or use the authenticated reset flow before a controlled test.
+1. Confirm health visibility (full vs limited)  
+2. Pick an application root  
+3. Walk the process tree to the network-active PID  
+4. Open Advanced Mode (hash, libraries, files, stacks, events)  
+5. Judge observed vs correlated vs heuristic  
+6. Set baseline / export JSON or CSV / clear evidence for a clean test  
 
-## API overview
+---
 
-The local API includes endpoints for:
+## Configuration (`IGIRIS_*`)
 
-- health and evidence revision;
-- password login/logout;
-- application roots and details;
-- process-scoped events and advanced artifacts;
-- baseline creation/removal;
-- evidence reset;
-- JSON and CSV export.
+All settings: `src/igiris/config.py`. Packaged defaults: `packaging/igiris.env`.
 
-When the service is running, the OpenAPI description is available from the configured host at `/docs`. API requests require an active password session when authentication is configured.
+### Bind and access
 
-## Security model
+| Variable | Default | Notes |
+|---|---|---|
+| `IGIRIS_BIND_MODE` | `localhost` | `localhost`→`127.0.0.1`, `network`→`0.0.0.0` |
+| `IGIRIS_BIND_HOST` | unset | If set, overrides mode (legacy) |
+| `IGIRIS_BIND_PORT` | `8787` | Listen port |
+| `IGIRIS_ALLOWED_HOSTS` | `127.0.0.1,localhost,[::1]` | Host + Origin allow list |
 
-- **Local-first:** evidence is stored locally in SQLite and is not uploaded by Igris.
-- **Loopback by default:** the packaged service does not listen on the LAN unless explicitly reconfigured.
-- **Host and Origin checks:** the API validates accepted host/origin values.
-- **No plaintext password storage:** authentication uses a root-owned, owner-only salted scrypt verifier.
-- **Bounded verification:** per-client throttling, bounded client state, and a global concurrency limit constrain expensive password checks.
-- **Ephemeral sessions:** random bearer sessions exist only in process memory, expire automatically, and are revoked on logout or restart.
-- **Least exposure:** the UI keeps its session in browser session storage rather than persistent local storage.
-- **Service hardening:** the systemd unit applies filesystem and process restrictions while retaining the privilege required for host telemetry.
+Prefer localhost; use `network` only on authorized LANs with firewall + tight `ALLOWED_HOSTS`. Restart after changes: `sudo systemctl restart igiris`.
 
-The collector observes sensitive host metadata, including command lines, file paths, users, and network destinations. Protect the database, exports, service account, and browser session as investigation evidence.
+### Auth
 
-## Current limitations
+| Variable | Default | Notes |
+|---|---|---|
+| `IGIRIS_PASSWORD_VERIFIER_FILE` | `/etc/igiris/password.verifier` | scrypt verifier path |
+| `IGIRIS_SESSION_TTL_SECONDS` | `28800` | 8h sessions |
+| `IGIRIS_LOGIN_MAX_FAILURES` | `5` | Per-client throttle |
+| `IGIRIS_LOGIN_FAILURE_WINDOW_SECONDS` | `60` | Throttle window |
+| `IGIRIS_LOGIN_MAX_PARALLEL_CHECKS` | `2` | Cap concurrent scrypt |
 
-- Polling can miss short-lived processes, mappings, and connections.
-- PID-only historical identity can become ambiguous after PID reuse; generation-safe identity is planned.
-- Browser DNS-over-HTTPS or DNS-over-TLS may expose only resolver/CDN connections rather than the original query name.
-- PTR data and parsed command arguments are enrichment, not observed DNS requests, and must be labeled accordingly.
-- Executable hashes can be unavailable when files are deleted, unreadable, or gone before enrichment.
-- A mapped `.so` is correlated with a process, not automatically responsible for its network behavior.
-- The current service does not capture packet contents, decrypt TLS, provide a fleet console, or enforce firewall policy.
-- Linux is the only collector platform currently implemented.
+### Collection and storage
 
-## Roadmap
+| Variable | Default | Notes |
+|---|---|---|
+| `IGIRIS_DATABASE_PATH` | package: `/var/lib/igiris/igiris.db` | SQLite file |
+| `IGIRIS_RETENTION_HOURS` | `24` | History window |
+| `IGIRIS_SOFT_DISK_CAP_MB` | `512` | Soft size budget |
+| `IGIRIS_POLL_INTERVAL` | `1.0` | Main poll seconds |
+| `IGIRIS_EXEC_POLL_INTERVAL` | `0.2` | Faster network-tool poll |
+| `IGIRIS_COLLECTOR_ENABLED` | `true` | API-only if false |
+| `IGIRIS_PTR_FALLBACK` | `false` | Reverse DNS enrichment |
+| `IGIRIS_NETWORK_TOOLS` | `curl,wget,ping,...` | Tool name set |
 
-### Generation-safe process evidence
+### Minimal secure env example
 
-- identify a process by boot ID, TGID, kernel start time, and exec generation rather than PID alone;
-- preserve every executable generation across same-PID `exec` transitions;
-- retain parent/child identity without joining evidence across PID reuse.
+```ini
+IGIRIS_BIND_MODE=localhost
+IGIRIS_BIND_PORT=8787
+IGIRIS_ALLOWED_HOSTS=127.0.0.1,localhost,[::1]
+IGIRIS_PASSWORD_VERIFIER_FILE=/etc/igiris/password.verifier
+IGIRIS_DATABASE_PATH=/var/lib/igiris/igiris.db
+IGIRIS_RETENTION_HOURS=24
+```
 
-### libbpf CO-RE event collector
+---
 
-- add a narrow privileged native helper using kernel BTF;
-- capture process exec/exit and connect entry/exit events;
-- capture executable `mmap`, `mprotect`, `mremap`, and `munmap` lifecycle events;
-- record TGID and TID so network activity is attributed to the initiating thread;
-- expose event-loss counters and explicit fallback reasons;
-- keep the web/API process separate from the smallest practical privileged acquisition boundary.
+## Security model (short)
 
-### Defensible module and call-site attribution
+- Evidence stays on the host (no Igris cloud upload)  
+- Loopback bind by default  
+- TrustedHost + Origin checks  
+- scrypt verifier only (no plaintext password storage)  
+- Bounded login failures and parallel password checks  
+- Ephemeral in-memory sessions; UI uses sessionStorage  
+- systemd hardening (`ProtectSystem`, `PrivateTmp`, …); service still **root** for host-wide collection  
 
-- capture bounded user-space stacks at connection time where kernel policy permits;
-- resolve instruction addresses against the process-generation mapping timeline;
-- identify the syscall call-site module and supporting stack modules;
-- distinguish the exact network-active process from its application root;
-- present attribution as observed, correlated, or best-effort rather than asserting unsupported causation.
+Protect the DB, exports, verifier file, and browser session like case material.
 
-### Detection and evidence engineering
+---
 
-- ELF build IDs and stronger executable/image identity;
-- signed or hash-chained exports for evidence-integrity workflows;
-- configurable local detection rules and allowlists;
-- Sigma-compatible or other interoperable event mappings where semantics align;
-- richer retention controls and case-oriented export bundles;
-- performance budgets and stress tests for high-process-count hosts.
-
-### Broader deployment options
-
-- tested packages for additional Linux distributions and architectures;
-- optional remote collection through an authenticated, encrypted architecture;
-- non-Linux acquisition backends only after their evidence semantics can remain explicit and comparable.
-
-## Contributing
-
-Security-sensitive changes should include:
-
-- tests that fail before the fix and pass afterward;
-- explicit evidence semantics;
-- no committed credentials or private investigation data;
-- static analysis and dependency-audit results;
-- documentation of privilege, performance, and fallback behavior.
-
-Before opening a change, run:
+## Development and tests
 
 ```bash
 .venv/bin/pytest -q
-cd frontend && npm test && npm run build && npm audit --audit-level=high
+cd frontend && npm test && npm run build
+tests/python.sh && tests/frontend.sh && tests/package.sh
+# optional: tests/security.sh
 ```
 
-## Responsible use
+Contributor contract: [`DEVELOPMENT_INSTRUCTIONS.md`](./DEVELOPMENT_INSTRUCTIONS.md).  
+Security scanning notes: [`SECURITY_SCANNING.md`](./SECURITY_SCANNING.md).
 
-Use Igris only on systems and networks you own or have explicit permission to monitor or assess. Follow applicable law, organizational policy, data-retention requirements, and rules of engagement.
+CI lives under `.github/workflows/` (ci, security, CodeQL, release).
+
+---
+
+## Limitations
+
+- Polling misses short-lived activity between intervals  
+- PID reuse can confuse history (generation-safe IDs planned)  
+- Browser DoH/DoT may hide original names  
+- No packet contents, TLS decrypt, fleet console, or blocking  
+- Linux collectors only today  
+
+## Roadmap (high level)
+
+- Generation-safe process identity  
+- libbpf CO-RE collector (replace runtime BCC as primary path)  
+- Stronger call-site attribution and evidence packaging  
+- Broader distro/arch packaging  
+
+## License / contribution expectations
+
+Security-sensitive PRs need failing-then-passing tests, clear evidence semantics, no secrets/case data, and docs for privilege and fallbacks. See the PR template under `.github/`.
