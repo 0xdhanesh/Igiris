@@ -1,4 +1,4 @@
-from igiris.processes import ProcessSnapshot, file_paths_from_fd_targets, library_paths_from_maps, resolve_root
+from igris.processes import ProcessSnapshot, file_paths_from_fd_targets, library_paths_from_maps, resolve_root
 
 
 def test_resolve_root_stops_below_system_boundary():

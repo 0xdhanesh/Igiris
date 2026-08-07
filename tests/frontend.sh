@@ -6,4 +6,4 @@ npm ci
 npm test
 npm run build
 cd "$ROOT"
-diff -qr frontend/dist src/igiris/static
+diff -qr frontend/dist src/igris/static

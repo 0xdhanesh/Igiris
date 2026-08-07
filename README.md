@@ -1,17 +1,17 @@
-# Igris — Blood-Red Commander
+# Igris -  Blood-Red Commander
 
 <p align="center">
-  <img src="./assets/igiris_0xdhanesh.png" alt="Igris investigation monitor" width="75%">
+  <img src="./assets/igris_0xdhanesh.png" alt="Igris investigation monitor" width="75%">
 </p>
 
 > **One-line:** Local-first Linux process + network investigation monitor. Collects evidence on-host, stores it in SQLite, serves a password-protected web UI and API. No cloud required.
 
-| | |
+| Data | Data - Extended :P |
 |---|---|
 | **Version** | 1.2.0 (`version.txt`) |
 | **Platform** | Linux (collector); Python 3.11+ |
 | **Stack** | FastAPI · uvicorn · psutil · Pydantic · SQLite · React/Vite · optional BCC/eBPF |
-| **Entry points** | `igirisd` (daemon) · `igiris-set-password` · `packaging/install.sh` |
+| **Entry points** | `igrisd` (daemon) · `igris-set-password` · `packaging/install.sh` |
 | **Default UI** | `http://127.0.0.1:8787` (loopback only) |
 | **Not** | Firewall, EDR, SIEM, packet capture, malware verdict engine |
 
@@ -62,9 +62,9 @@ Linux /proc + sockets (+ optional BCC eBPF)
 
 ```text
 Igris/
-├── src/igiris/           # Python package = the application
+├── src/igris/           # Python package = the application
 │   ├── main.py           # Startup, collector choice, uvicorn
-│   ├── config.py         # IGIRIS_* settings
+│   ├── config.py         # IGRIS_* settings
 │   ├── collectors.py     # /proc polling + enrichment
 │   ├── ebpf.py           # BCC eBPF program + stack resolution
 │   ├── processes.py      # Snapshots, roots, hashes, maps/fds
@@ -72,11 +72,11 @@ Igris/
 │   ├── store.py          # SQLite schema + queries
 │   ├── api.py            # Routes, auth middleware, SPA
 │   ├── auth.py           # scrypt + sessions
-│   ├── auth_cli.py       # igiris-set-password
+│   ├── auth_cli.py       # igris-set-password
 │   └── static/           # Built UI (from frontend/dist)
 ├── frontend/             # React/Vite source + node tests
 │   └── src/              # UI modules (auth, dashboard, timeline, …)
-├── packaging/            # install.sh, systemd unit, igiris.env
+├── packaging/            # install.sh, systemd unit, igris.env
 ├── tests/                # pytest + shell CI helpers
 ├── assets/               # Artwork for docs
 ├── version.txt           # Release version source of truth
@@ -89,13 +89,13 @@ Igris/
 
 | Goal | Open |
 |---|---|
-| App lifecycle | `src/igiris/main.py` |
-| HTTP API surface | `src/igiris/api.py` |
-| Settings / env vars | `src/igiris/config.py` · `packaging/igiris.env` |
-| Polling collector | `src/igiris/collectors.py` |
-| eBPF collector | `src/igiris/ebpf.py` |
-| DB schema | `src/igiris/store.py` |
-| Production install | `packaging/install.sh` · `packaging/igiris.service` |
+| App lifecycle | `src/igris/main.py` |
+| HTTP API surface | `src/igris/api.py` |
+| Settings / env vars | `src/igris/config.py` · `packaging/igris.env` |
+| Polling collector | `src/igris/collectors.py` |
+| eBPF collector | `src/igris/ebpf.py` |
+| DB schema | `src/igris/store.py` |
+| Production install | `packaging/install.sh` · `packaging/igris.service` |
 | UI entry | `frontend/src/main.jsx` |
 
 ### Quick commands
@@ -106,7 +106,7 @@ sudo bash packaging/install.sh
 
 # Dev backend
 python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
-.venv/bin/igirisd
+.venv/bin/igrisd
 
 # Tests
 .venv/bin/pytest -q
@@ -135,7 +135,7 @@ tests/all.sh
 
 | Component | Responsibility |
 |---|---|
-| **`igirisd`** | Loads settings, opens DB, starts collector task, serves FastAPI |
+| **`igrisd`** | Loads settings, opens DB, starts collector task, serves FastAPI |
 | **Collector** | Continuously gathers host evidence |
 | **Store** | Persists processes, events, artifacts; retention/cleanup |
 | **API + auth** | Password login, Bearer sessions, investigation endpoints |
@@ -199,7 +199,7 @@ Interactive docs: `/docs` when running. Auth required for API when a password ve
 
 ### Frontend (`frontend/`)
 
-React + Vite. Modules: auth, dashboard, timeline, revision polling, refresh highlights. Production build lands in `src/igiris/static` (installer rebuilds and syncs; do not hand-edit generated assets).
+React + Vite. Modules: auth, dashboard, timeline, revision polling, refresh highlights. Production build lands in `src/igris/static` (installer rebuilds and syncs; do not hand-edit generated assets).
 
 ---
 
@@ -218,7 +218,7 @@ React + Vite. Modules: auth, dashboard, timeline, revision polling, refresh high
 ```bash
 # Read packaging/install.sh first
 sudo bash packaging/install.sh
-sudo systemctl status igiris
+sudo systemctl status igris
 curl --noproxy '*' http://127.0.0.1:8787/api/health
 ```
 
@@ -227,17 +227,17 @@ What the installer does:
 1. Detect environment (OS, arch, distro, Raspberry Pi, package manager)  
 2. Check eBPF / JIT / headers / BCC; optionally install packages  
 3. `npm ci` + build frontend → copy into package static  
-4. Install under `/opt/igiris` with venv (`--system-site-packages` for distro BCC)  
-5. Create unlock password → `/etc/igiris/password.verifier`  
-6. Install `/etc/igiris/igiris.env` + systemd unit; enable & restart  
+4. Install under `/opt/igris` with venv (`--system-site-packages` for distro BCC)  
+5. Create unlock password → `/etc/igris/password.verifier`  
+6. Install `/etc/igris/igris.env` + systemd unit; enable & restart  
 
-Config file: `/etc/igiris/igiris.env`  
-Logs: `sudo journalctl -u igiris -f`  
+Config file: `/etc/igris/igris.env`  
+Logs: `sudo journalctl -u igris -f`  
 Password change:
 
 ```bash
-sudo /opt/igiris/.venv/bin/igiris-set-password --file /etc/igiris/password.verifier
-sudo systemctl restart igiris
+sudo /opt/igris/.venv/bin/igris-set-password --file /etc/igris/password.verifier
+sudo systemctl restart igris
 ```
 
 ### Development run
@@ -246,10 +246,10 @@ sudo systemctl restart igiris
 python3 -m venv .venv
 .venv/bin/pip install -e '.[dev]'
 cd frontend && npm ci && npm run build && cd ..
-.venv/bin/igirisd
+.venv/bin/igrisd
 ```
 
-Dev DB default: `~/.local/share/igiris/igiris.db` (override with `IGIRIS_DATABASE_PATH`). Full eBPF collection still needs root + BCC on Linux.
+Dev DB default: `~/.local/share/igris/igris.db` (override with `IGRIS_DATABASE_PATH`). Full eBPF collection still needs root + BCC on Linux.
 
 ### Investigation workflow (operator)
 
@@ -262,53 +262,53 @@ Dev DB default: `~/.local/share/igiris/igiris.db` (override with `IGIRIS_DATABAS
 
 ---
 
-## Configuration (`IGIRIS_*`)
+## Configuration (`IGRIS_*`)
 
-All settings: `src/igiris/config.py`. Packaged defaults: `packaging/igiris.env`.
+All settings: `src/igris/config.py`. Packaged defaults: `packaging/igris.env`.
 
 ### Bind and access
 
 | Variable | Default | Notes |
 |---|---|---|
-| `IGIRIS_BIND_MODE` | `localhost` | `localhost`→`127.0.0.1`, `network`→`0.0.0.0` |
-| `IGIRIS_BIND_HOST` | unset | If set, overrides mode (legacy) |
-| `IGIRIS_BIND_PORT` | `8787` | Listen port |
-| `IGIRIS_ALLOWED_HOSTS` | `127.0.0.1,localhost,[::1]` | Host + Origin allow list |
+| `IGRIS_BIND_MODE` | `localhost` | `localhost`→`127.0.0.1`, `network`→`0.0.0.0` |
+| `IGRIS_BIND_HOST` | unset | If set, overrides mode (legacy) |
+| `IGRIS_BIND_PORT` | `8787` | Listen port |
+| `IGRIS_ALLOWED_HOSTS` | `127.0.0.1,localhost,[::1]` | Host + Origin allow list |
 
-Prefer localhost; use `network` only on authorized LANs with firewall + tight `ALLOWED_HOSTS`. Restart after changes: `sudo systemctl restart igiris`.
+Prefer localhost; use `network` only on authorized LANs with firewall + tight `ALLOWED_HOSTS`. Restart after changes: `sudo systemctl restart igris`.
 
 ### Auth
 
 | Variable | Default | Notes |
 |---|---|---|
-| `IGIRIS_PASSWORD_VERIFIER_FILE` | `/etc/igiris/password.verifier` | scrypt verifier path |
-| `IGIRIS_SESSION_TTL_SECONDS` | `28800` | 8h sessions |
-| `IGIRIS_LOGIN_MAX_FAILURES` | `5` | Per-client throttle |
-| `IGIRIS_LOGIN_FAILURE_WINDOW_SECONDS` | `60` | Throttle window |
-| `IGIRIS_LOGIN_MAX_PARALLEL_CHECKS` | `2` | Cap concurrent scrypt |
+| `IGRIS_PASSWORD_VERIFIER_FILE` | `/etc/igris/password.verifier` | scrypt verifier path |
+| `IGRIS_SESSION_TTL_SECONDS` | `28800` | 8h sessions |
+| `IGRIS_LOGIN_MAX_FAILURES` | `5` | Per-client throttle |
+| `IGRIS_LOGIN_FAILURE_WINDOW_SECONDS` | `60` | Throttle window |
+| `IGRIS_LOGIN_MAX_PARALLEL_CHECKS` | `2` | Cap concurrent scrypt |
 
 ### Collection and storage
 
 | Variable | Default | Notes |
 |---|---|---|
-| `IGIRIS_DATABASE_PATH` | package: `/var/lib/igiris/igiris.db` | SQLite file |
-| `IGIRIS_RETENTION_HOURS` | `24` | History window |
-| `IGIRIS_SOFT_DISK_CAP_MB` | `512` | Soft size budget |
-| `IGIRIS_POLL_INTERVAL` | `1.0` | Main poll seconds |
-| `IGIRIS_EXEC_POLL_INTERVAL` | `0.2` | Faster network-tool poll |
-| `IGIRIS_COLLECTOR_ENABLED` | `true` | API-only if false |
-| `IGIRIS_PTR_FALLBACK` | `false` | Reverse DNS enrichment |
-| `IGIRIS_NETWORK_TOOLS` | `curl,wget,ping,...` | Tool name set |
+| `IGRIS_DATABASE_PATH` | package: `/var/lib/igris/igris.db` | SQLite file |
+| `IGRIS_RETENTION_HOURS` | `24` | History window |
+| `IGRIS_SOFT_DISK_CAP_MB` | `512` | Soft size budget |
+| `IGRIS_POLL_INTERVAL` | `1.0` | Main poll seconds |
+| `IGRIS_EXEC_POLL_INTERVAL` | `0.2` | Faster network-tool poll |
+| `IGRIS_COLLECTOR_ENABLED` | `true` | API-only if false |
+| `IGRIS_PTR_FALLBACK` | `false` | Reverse DNS enrichment |
+| `IGRIS_NETWORK_TOOLS` | `curl,wget,ping,...` | Tool name set |
 
 ### Minimal secure env example
 
 ```ini
-IGIRIS_BIND_MODE=localhost
-IGIRIS_BIND_PORT=8787
-IGIRIS_ALLOWED_HOSTS=127.0.0.1,localhost,[::1]
-IGIRIS_PASSWORD_VERIFIER_FILE=/etc/igiris/password.verifier
-IGIRIS_DATABASE_PATH=/var/lib/igiris/igiris.db
-IGIRIS_RETENTION_HOURS=24
+IGRIS_BIND_MODE=localhost
+IGRIS_BIND_PORT=8787
+IGRIS_ALLOWED_HOSTS=127.0.0.1,localhost,[::1]
+IGRIS_PASSWORD_VERIFIER_FILE=/etc/igris/password.verifier
+IGRIS_DATABASE_PATH=/var/lib/igris/igris.db
+IGRIS_RETENTION_HOURS=24
 ```
 
 ---

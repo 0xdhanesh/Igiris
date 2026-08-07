@@ -82,7 +82,7 @@ Semgrep does not require a dedicated repository setting. It uses the Python envi
       --exclude .venv \
       --exclude frontend/node_modules \
       --exclude frontend/dist \
-      --exclude src/igiris/static \
+      --exclude src/igris/static \
       .
 ```
 
@@ -109,10 +109,10 @@ Semgrep uses the same push, pull-request, weekly, and manual triggers as the sec
 ```yaml
 - name: Produce complete Bandit report
   continue-on-error: true
-  run: bandit -r src/igiris -f json -o bandit-report.json
+  run: bandit -r src/igris -f json -o bandit-report.json
 
 - name: Block high-severity Bandit findings
-  run: bandit -r src/igiris --severity-level high --confidence-level medium
+  run: bandit -r src/igris --severity-level high --confidence-level medium
 
 - name: Upload Bandit report
   if: always()
@@ -299,8 +299,8 @@ workflow-security:
 ```text
 * @0xdhanesh
 
-/src/igiris/auth.py @0xdhanesh
-/src/igiris/api.py @0xdhanesh
+/src/igris/auth.py @0xdhanesh
+/src/igris/api.py @0xdhanesh
 /packaging/ @0xdhanesh
 /.github/workflows/ @0xdhanesh
 ```
@@ -378,13 +378,13 @@ frontend:
     - run: npm ci
     - run: npm test
     - run: npm run build
-    - run: diff -qr frontend/dist src/igiris/static
+    - run: diff -qr frontend/dist src/igris/static
 ```
 
 ##### Related files
 
 - `frontend/package.json` - npm configuration
-- `src/igiris/static/` - packaged frontend assets
+- `src/igris/static/` - packaged frontend assets
 
 ##### Why it matters
 
@@ -406,10 +406,10 @@ package:
     - run: bash -n packaging/install.sh # Syntax check
     - run: python -m build # Build wheel and source distribution
     - run: |
-        python -m venv /tmp/igiris-wheel
-        /tmp/igiris-wheel/bin/pip install dist/*.whl
-        /tmp/igiris-wheel/bin/python -c "import igiris"
-        /tmp/igiris-wheel/bin/igiris-set-password --help >/dev/null
+        python -m venv /tmp/igris-wheel
+        /tmp/igris-wheel/bin/pip install dist/*.whl
+        /tmp/igris-wheel/bin/python -c "import igris"
+        /tmp/igris-wheel/bin/igris-set-password --help >/dev/null
     - uses: actions/upload-artifact
       with:
         name: python-packages
@@ -528,7 +528,7 @@ build:
   timeout-minutes: 30
   steps:
     - run: npm ci && npm test && npm run build
-    - run: diff -qr frontend/dist src/igiris/static
+    - run: diff -qr frontend/dist src/igris/static
     - run: python -m pip install -e '.[dev]' build==1.3.0
     - run: python -m pytest -q
     - run: python -m build # Creates wheel and source distribution

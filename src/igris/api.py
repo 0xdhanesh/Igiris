@@ -46,7 +46,7 @@ def _lineage_for_event_processes(processes,network_pids:set[int]):
     return [process for process in processes if process.pid in included]
 
 def _application_version()->str:
-    for path in (Path("/opt/igiris/version.txt"),Path(__file__).resolve().parents[2]/"version.txt"):
+    for path in (Path("/opt/igris/version.txt"),Path(__file__).resolve().parents[2]/"version.txt"):
         try:
             value=path.read_text(encoding="utf-8").strip()
             if value: return value.removeprefix("v")
@@ -192,13 +192,13 @@ def create_app(settings:Settings|None=None, store:Store|None=None)->FastAPI:
     @app.get("/api/export.json")
     def export_json(root_pid:int|None=None,search:str|None=None,baseline_only:bool=False,mode:str=Query("combined",pattern="^(live|history|combined)$"),destination:str|None=None):
         payload=[e.model_dump(mode="json") for e in selected(root_pid,search,baseline_only,mode,destination)]
-        return StreamingResponse(io.BytesIO(json.dumps(payload,indent=2).encode()),media_type="application/json",headers={"Content-Disposition":"attachment; filename=igiris-evidence.json"})
+        return StreamingResponse(io.BytesIO(json.dumps(payload,indent=2).encode()),media_type="application/json",headers={"Content-Disposition":"attachment; filename=igris-evidence.json"})
     @app.get("/api/export.csv")
     def export_csv(root_pid:int|None=None,search:str|None=None,baseline_only:bool=False,mode:str=Query("combined",pattern="^(live|history|combined)$"),destination:str|None=None):
         out=io.StringIO(); writer=csv.DictWriter(out,fieldnames=EXPORT_FIELDS); writer.writeheader()
         for e in selected(root_pid,search,baseline_only,mode,destination):
             row=e.model_dump(mode="json",exclude={"id"}); row["raw_meta"]=json.dumps(row["raw_meta"],separators=(",",":")); writer.writerow({key:_safe_csv_cell(value) for key,value in row.items()})
-        return StreamingResponse(io.BytesIO(out.getvalue().encode()),media_type="text/csv",headers={"Content-Disposition":"attachment; filename=igiris-evidence.csv"})
+        return StreamingResponse(io.BytesIO(out.getvalue().encode()),media_type="text/csv",headers={"Content-Disposition":"attachment; filename=igris-evidence.csv"})
     static=Path(settings.static_dir)
     if static.exists():
         app.mount("/assets",StaticFiles(directory=static/"assets"),name="assets")

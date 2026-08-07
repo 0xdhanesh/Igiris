@@ -1,7 +1,7 @@
 import pytest
 
-from igiris.auth import read_password_verifier, verify_password
-from igiris.auth_cli import configure_password
+from igris.auth import read_password_verifier, verify_password
+from igris.auth_cli import configure_password
 
 
 def test_configure_password_prompts_twice_and_writes_verifier(tmp_path):

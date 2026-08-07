@@ -3,7 +3,7 @@ import threading
 
 import pytest
 
-from igiris.auth import (
+from igris.auth import (
     LoginLimiter,
     SessionManager,
     hash_password,
@@ -42,7 +42,7 @@ def test_password_verifier_is_salted_and_rejects_wrong_password():
 def test_password_verifier_rejects_noncanonical_or_unbounded_fields_before_scrypt(monkeypatch, mutate):
     fields = hash_password("test password", salt=b"0123456789abcdef").split("$")
     mutate(fields)
-    monkeypatch.setattr("igiris.auth.hashlib.scrypt", lambda *args, **kwargs: pytest.fail("scrypt called"))
+    monkeypatch.setattr("igris.auth.hashlib.scrypt", lambda *args, **kwargs: pytest.fail("scrypt called"))
 
     assert verify_password("test password", "$".join(fields)) is False
 

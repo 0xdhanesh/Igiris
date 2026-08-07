@@ -63,13 +63,13 @@ jobs:
             --exclude .venv \
             --exclude frontend/node_modules \
             --exclude frontend/dist \
-            --exclude src/igiris/static \
+            --exclude src/igris/static \
             .
       - name: Produce complete Bandit report
         continue-on-error: true
-        run: bandit -r src/igiris -f json -o bandit-report.json
+        run: bandit -r src/igris -f json -o bandit-report.json
       - name: Block high-severity Bandit findings
-        run: bandit -r src/igiris --severity-level high --confidence-level medium
+        run: bandit -r src/igris --severity-level high --confidence-level medium
       - name: Upload Bandit report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

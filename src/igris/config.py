@@ -4,7 +4,7 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="IGIRIS_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="IGRIS_", env_file=".env", extra="ignore")
     bind_mode: str = "localhost"
     bind_host: str = "127.0.0.1"
     bind_port: int = Field(default=8787,gt=0,le=65535)
@@ -16,7 +16,7 @@ class Settings(BaseSettings):
         if mode in {"localhost", "network"}:
             return mode
         warnings.warn(
-            f"Invalid IGIRIS_BIND_MODE={value!r}; falling back to 'localhost'.",
+            f"Invalid IGRIS_BIND_MODE={value!r}; falling back to 'localhost'.",
             RuntimeWarning,
             stacklevel=2,
         )
@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     login_max_failures: int = Field(default=5, gt=0)
     login_failure_window_seconds: int = Field(default=60, gt=0)
     login_max_parallel_checks: int = Field(default=2, gt=0, le=8)
-    database_path: str = str(Path.home() / ".local" / "share" / "igiris" / "igiris.db")
+    database_path: str = str(Path.home() / ".local" / "share" / "igris" / "igris.db")
     retention_hours: int = Field(default=24,gt=0)
     soft_disk_cap_mb: int = Field(default=512,gt=0)
     poll_interval: float = Field(default=1.0,gt=0)

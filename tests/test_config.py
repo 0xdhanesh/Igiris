@@ -1,11 +1,11 @@
 import pytest
 
-from igiris.config import Settings
+from igris.config import Settings
 
 
 def test_network_bind_mode_resolves_to_all_interfaces(monkeypatch):
-    monkeypatch.setenv("IGIRIS_BIND_MODE", "network")
-    monkeypatch.delenv("IGIRIS_BIND_HOST", raising=False)
+    monkeypatch.setenv("IGRIS_BIND_MODE", "network")
+    monkeypatch.delenv("IGRIS_BIND_HOST", raising=False)
 
     settings = Settings(_env_file=None)
 
@@ -13,8 +13,8 @@ def test_network_bind_mode_resolves_to_all_interfaces(monkeypatch):
 
 
 def test_bind_mode_defaults_to_localhost(monkeypatch):
-    monkeypatch.delenv("IGIRIS_BIND_MODE", raising=False)
-    monkeypatch.delenv("IGIRIS_BIND_HOST", raising=False)
+    monkeypatch.delenv("IGRIS_BIND_MODE", raising=False)
+    monkeypatch.delenv("IGRIS_BIND_HOST", raising=False)
 
     settings = Settings(_env_file=None)
 
@@ -22,8 +22,8 @@ def test_bind_mode_defaults_to_localhost(monkeypatch):
 
 
 def test_explicit_bind_host_takes_precedence_over_bind_mode(monkeypatch):
-    monkeypatch.setenv("IGIRIS_BIND_MODE", "network")
-    monkeypatch.setenv("IGIRIS_BIND_HOST", "127.0.0.2")
+    monkeypatch.setenv("IGRIS_BIND_MODE", "network")
+    monkeypatch.setenv("IGRIS_BIND_HOST", "127.0.0.2")
 
     settings = Settings(_env_file=None)
 
@@ -31,10 +31,10 @@ def test_explicit_bind_host_takes_precedence_over_bind_mode(monkeypatch):
 
 
 def test_invalid_bind_mode_warns_and_falls_back_to_localhost(monkeypatch):
-    monkeypatch.setenv("IGIRIS_BIND_MODE", "internet")
-    monkeypatch.delenv("IGIRIS_BIND_HOST", raising=False)
+    monkeypatch.setenv("IGRIS_BIND_MODE", "internet")
+    monkeypatch.delenv("IGRIS_BIND_HOST", raising=False)
 
-    with pytest.warns(RuntimeWarning, match="Invalid IGIRIS_BIND_MODE"):
+    with pytest.warns(RuntimeWarning, match="Invalid IGRIS_BIND_MODE"):
         settings = Settings(_env_file=None)
 
     assert settings.resolved_bind_host == "127.0.0.1"

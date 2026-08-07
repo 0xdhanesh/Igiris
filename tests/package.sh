@@ -5,9 +5,9 @@ cd "$ROOT"
 bash -n packaging/install.sh packaging/reinstall.sh
 python -m pip install build==1.3.0
 python -m build
-wheel_env="$(mktemp -d /tmp/igiris-wheel.XXXXXX)"
+wheel_env="$(mktemp -d /tmp/igris-wheel.XXXXXX)"
 trap 'rm -rf "$wheel_env"' EXIT
 python -m venv "$wheel_env"
 "$wheel_env/bin/pip" install dist/*.whl
-"$wheel_env/bin/python" -c 'import igiris'
-"$wheel_env/bin/igiris-set-password" --help >/dev/null
+"$wheel_env/bin/python" -c 'import igris'
+"$wheel_env/bin/igris-set-password" --help >/dev/null

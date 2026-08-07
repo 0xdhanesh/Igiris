@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from igiris import ebpf
+from igris import ebpf
 
 
 def test_bpf_program_uses_bcc_stack_trace_map_helper():
