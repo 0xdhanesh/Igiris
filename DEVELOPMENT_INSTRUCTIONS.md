@@ -30,6 +30,17 @@ assets/                 project artwork and documentation assets
 
 `src/igris/static` must exactly match `frontend/dist` before packaging. Never hand-edit generated assets. The installer rebuilds the frontend and synchronizes those directories.
 
+### Keeping packaged static in sync (local + GitHub)
+
+| Context | Behavior |
+|---------|----------|
+| Local | Run `bash scripts/sync-frontend-static.sh`, then commit `src/igris/static`. `./tests/frontend.sh` fails if the trees differ. |
+| GitHub CI | Builds the UI, uploads `frontend-dist`, and **injects that artifact into the package job** so wheels always ship the just-built bundle—even if git was briefly stale. |
+| GitHub Sync workflow | `.github/workflows/sync-frontend-static.yml` rebuilds on `frontend/**` or `src/igris/static/**` changes and **auto-commits** the sync to the same branch (same-repo only; fork PRs need a manual sync). |
+| Release tags | Release workflow injects the runner build into `src/igris/static` before `python -m build`. |
+
+Pushes performed with `GITHUB_TOKEN` do not re-trigger other workflows; that is why CI packages from the build artifact instead of relying on a follow-up commit alone.
+
 ## Development environment
 
 Requirements: Linux, Python 3.11 or newer, Node.js/npm for frontend work, and Git. Root privileges and BCC/kernel headers are required only for full live eBPF collection, not for ordinary unit tests.
